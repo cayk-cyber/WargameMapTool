@@ -1,0 +1,49 @@
+{
+  "name": "ASL",
+  "colors": [
+    {
+      "name": "Ground_Open",
+      "color": "#94ae5c"
+    },
+    {
+      "name": "Hill_1",
+      "color": "#c88256"
+    },
+    {
+      "name": "Hill_2",
+      "color": "#b9543e"
+    },
+    {
+      "name": "Hill_3",
+      "color": "#91413c"
+    },
+    {
+      "name": "Valley",
+      "color": "#567740"
+    },
+    {
+      "name": "Water",
+      "color": "#5ad7e2"
+    },
+    {
+      "name": "Bocage",
+      "color": "#3e5b2f"
+    },
+    {
+      "name": "Orchard",
+      "color": "#52622e"
+    },
+    {
+      "name": "Road_Mud",
+      "color": "#dccd7b"
+    },
+    {
+      "name": "Road_Asphalt",
+      "color": "#c6c6ce"
+    },
+    {
+      "name": "Grain",
+      "color": "#fff06f"
+    }
+  ]
+}

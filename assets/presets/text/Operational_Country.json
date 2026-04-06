@@ -1,0 +1,15 @@
+{
+  "name": "Operational_Country",
+  "font_family": "Impact",
+  "font_size": 100.0,
+  "bold": true,
+  "italic": false,
+  "underline": false,
+  "color": "#b1b1b1",
+  "alignment": "left",
+  "opacity": 0.66,
+  "rotation": 0.0,
+  "outline": false,
+  "outline_color": "#ffffff",
+  "outline_width": 1.0
+}

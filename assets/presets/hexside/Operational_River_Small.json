@@ -1,0 +1,17 @@
+{
+  "name": "Operational_River_Small",
+  "color": "#0577c3",
+  "width": 4.0,
+  "outline": false,
+  "outline_color": "#000000",
+  "outline_width": 1.0,
+  "shift_enabled": false,
+  "shift": 0.0,
+  "random": true,
+  "random_amplitude": 3.5,
+  "random_distance": 0.14,
+  "random_endpoint": 4.2,
+  "random_offset": 11.5,
+  "random_jitter": 0
+}
+

@@ -1,0 +1,16 @@
+{
+  "name": "ASL_Stonewall",
+  "paint_mode": "color",
+  "color": "#878787",
+  "width": 14.0,
+  "outline": false,
+  "outline_color": "#000000",
+  "outline_width": 1.0,
+  "shift_enabled": false,
+  "shift": 0.0,
+  "random": false,
+  "random_amplitude": 0.7,
+  "random_distance": 0.0,
+  "random_jitter": 5.4,
+  "random_offset": 0.0
+}

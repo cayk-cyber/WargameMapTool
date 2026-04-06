@@ -1,0 +1,13 @@
+{
+  "name": "NW_Border_2",
+  "color": "#606358",
+  "width": 5.0,
+  "line_type": "dotted",
+  "element_size": 5.0,
+  "gap_size": 10.0,
+  "dash_cap": "flat",
+  "outline": false,
+  "outline_color": "#000000",
+  "outline_width": 1.0,
+  "offset": 0.0
+}

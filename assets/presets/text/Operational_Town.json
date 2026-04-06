@@ -1,0 +1,15 @@
+{
+  "name": "Operational_Town",
+  "font_family": "Impact",
+  "font_size": 12.0,
+  "bold": false,
+  "italic": false,
+  "underline": false,
+  "color": "#000000",
+  "alignment": "left",
+  "opacity": 1.0,
+  "rotation": 0.0,
+  "outline": false,
+  "outline_color": "#ffffff",
+  "outline_width": 1.0
+}

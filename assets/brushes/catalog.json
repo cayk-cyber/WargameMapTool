@@ -1,0 +1,70 @@
+{
+  "brushes": [
+    {
+      "id": "round_soft",
+      "filename": "round_soft.png",
+      "display_name": "Round Soft",
+      "category": "Basic"
+    },
+    {
+      "id": "round_hard",
+      "filename": "round_hard.png",
+      "display_name": "Round Hard",
+      "category": "Basic"
+    },
+    {
+      "id": "square",
+      "filename": "square.png",
+      "display_name": "Square",
+      "category": "Basic"
+    },
+    {
+      "id": "spray",
+      "filename": "spray.png",
+      "display_name": "Spray",
+      "category": "Effects"
+    },
+    {
+      "id": "rough_round",
+      "filename": "rough_round.png",
+      "display_name": "Rough Round",
+      "category": "Textured"
+    },
+    {
+      "id": "round_hard_100",
+      "filename": "round_hard100.png",
+      "display_name": "Round Hard 100",
+      "category": "basic"
+    },
+    {
+      "id": "speckle_fine",
+      "filename": "speckle_fine.png",
+      "display_name": "Speckle Fine",
+      "category": "Speckle"
+    },
+    {
+      "id": "speckle_coarse",
+      "filename": "speckle_coarse.png",
+      "display_name": "Speckle Coarse",
+      "category": "Speckle"
+    },
+    {
+      "id": "speckle_scatter",
+      "filename": "speckle_scatter.png",
+      "display_name": "Speckle Scatter",
+      "category": "Speckle"
+    },
+    {
+      "id": "speckle_soft",
+      "filename": "speckle_soft.png",
+      "display_name": "Speckle Soft",
+      "category": "Speckle"
+    },
+    {
+      "id": "speckle_cluster",
+      "filename": "speckle_cluster.png",
+      "display_name": "Speckle Cluster",
+      "category": "Speckle"
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "name": "Operational",
+  "colors": [
+    {
+      "name": "Flat",
+      "color": "#e2e9d7"
+    },
+    {
+      "name": "Flat_Desert",
+      "color": "#eeecba"
+    },
+    {
+      "name": "Flat_Snow",
+      "color": "#ebebeb"
+    },
+    {
+      "name": "Urban",
+      "color": "#a4b4a3"
+    },
+    {
+      "name": "Sea",
+      "color": "#68c5ea"
+    },
+    {
+      "name": "Lake",
+      "color": "#0577c3"
+    },
+    {
+      "name": "Hill_1",
+      "color": "#cdc298"
+    },
+    {
+      "name": "Hill_2",
+      "color": "#a08c6c"
+    },
+    {
+      "name": "Mountain",
+      "color": "#574423"
+    },
+    {
+      "name": "Mountain_High",
+      "color": "#e7e7e7"
+    },
+    {
+      "name": "Prohibited",
+      "color": "#868a7c"
+    }
+  ]
+}

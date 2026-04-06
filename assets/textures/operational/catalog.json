@@ -1,0 +1,53 @@
+{
+  "textures": [
+    {
+      "id": "7a178e9a",
+      "filename": "7a178e9a_operational_forest_european.png",
+      "display_name": "operational_forest_european",
+      "category": "ground",
+      "game": "operational"
+    },
+    {
+      "id": "7c0999d6",
+      "filename": "7c0999d6_operational_forest_jungle.png",
+      "display_name": "operational_forest_jungle",
+      "category": "ground",
+      "game": "operational"
+    },
+    {
+      "id": "a4eb1067",
+      "filename": "a4eb1067_operational_forest_nordic.png",
+      "display_name": "operational_forest_nordic",
+      "category": "ground",
+      "game": "operational"
+    },
+    {
+      "id": "d97ef526",
+      "filename": "d97ef526_operational_hill1.png",
+      "display_name": "operational_hill1",
+      "category": "ground",
+      "game": "operational"
+    },
+    {
+      "id": "c532bf01",
+      "filename": "c532bf01_operational_hill2.png",
+      "display_name": "operational_hill2",
+      "category": "ground",
+      "game": "operational"
+    },
+    {
+      "id": "0e9b002c",
+      "filename": "0e9b002c_operational_mountain.png",
+      "display_name": "operational_mountain",
+      "category": "ground",
+      "game": "operational"
+    },
+    {
+      "id": "8f7be249",
+      "filename": "8f7be249_operational_mountain_high.png",
+      "display_name": "operational_mountain_high",
+      "category": "ground",
+      "game": "operational"
+    }
+  ]
+}
