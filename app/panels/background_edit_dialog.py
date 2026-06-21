@@ -14,7 +14,7 @@ from PySide6.QtGui import (
     QRadialGradient, QWheelEvent,
 )
 from PySide6.QtWidgets import (
-    QDialog, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QDialog, QGroupBox, QHBoxLayout, QLabel, QPushButton,
     QSizePolicy, QSlider, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -151,7 +151,10 @@ class ImageEditCanvas(QWidget):
     selection_changed = Signal()
     brush_size_changed = Signal(int)
 
-    def __init__(self, image: QImage, parent=None):
+    def __init__(self, image: QImage, parent=None, *,
+                 grid_config=None, grid_renderer=None,
+                 composite_image=None, composite_origin=None,
+                 bg_layer=None):
         super().__init__(parent)
         self._img: QImage = image.copy().convertToFormat(QImage.Format.Format_ARGB32)
         self._zoom: float = 1.0
@@ -193,6 +196,17 @@ class ImageEditCanvas(QWidget):
 
         # Brush cursor overlay
         self._cursor_pos: QPointF | None = None
+
+        # Overlay state (grid + flattened layers)
+        self._grid_config = grid_config
+        self._grid_renderer = grid_renderer
+        self._composite_image: QPixmap | None = composite_image
+        self._composite_origin: QPointF = composite_origin or QPointF(0, 0)
+        self._bg_layer = bg_layer
+        self._show_grid_overlay: bool = False
+        self._show_layer_overlay: bool = False
+        self._grid_opacity: float = 0.5
+        self._layer_opacity: float = 0.5
 
         self.setMinimumSize(400, 300)
         self.setMouseTracking(True)
@@ -357,18 +371,26 @@ class ImageEditCanvas(QWidget):
         return self._sel_ov_cache
 
     def _make_brush_stamp(self, mode: str) -> QImage:
-        """Build a brush stamp image (diameter = 2*r+2) with hardness and flow applied."""
+        """Build a brush stamp image with hardness and flow applied."""
         r = self._paint_radius
+        base = QColor(0, 0, 0) if mode == "erase" else QColor(self._paint_color)
+        alpha = int(round(self._flow * 255))
+
+        # For small radii, use pixel-exact filled rect (no antialiasing)
+        if r < 5:
+            d = r * 2 - 1 if r > 1 else 1
+            stamp = QImage(d, d, QImage.Format.Format_ARGB32)
+            c = QColor(base)
+            c.setAlpha(alpha)
+            stamp.fill(c)
+            return stamp
+
         d = r * 2 + 2
         stamp = QImage(d, d, QImage.Format.Format_ARGB32)
         stamp.fill(QColor(0, 0, 0, 0))
         cx = cy = r + 0.5
 
-        base = QColor(0, 0, 0) if mode == "erase" else QColor(self._paint_color)
-        alpha = int(round(self._flow * 255))
-
         p = QPainter(stamp)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         p.setPen(Qt.PenStyle.NoPen)
 
@@ -396,8 +418,9 @@ class ImageEditCanvas(QWidget):
         r = self._paint_radius
         stamp = self._make_brush_stamp(self._mode)
         # Top-left corner in image space where the stamp should be placed
-        tx = int(round(ix)) - r - 1
-        ty = int(round(iy)) - r - 1
+        half = stamp.width() // 2
+        tx = int(round(ix)) - half
+        ty = int(round(iy)) - half
 
         comp = (
             QPainter.CompositionMode.CompositionMode_DestinationOut
@@ -446,6 +469,73 @@ class ImageEditCanvas(QWidget):
         self.update()
 
     # ------------------------------------------------------------------
+    # Overlay controls
+    # ------------------------------------------------------------------
+
+    def set_grid_overlay(self, enabled: bool) -> None:
+        self._show_grid_overlay = enabled
+        self.update()
+
+    def set_layer_overlay(self, enabled: bool) -> None:
+        self._show_layer_overlay = enabled
+        self.update()
+
+    def set_grid_opacity(self, opacity: float) -> None:
+        self._grid_opacity = max(0.0, min(1.0, opacity))
+        self.update()
+
+    def set_layer_opacity(self, opacity: float) -> None:
+        self._layer_opacity = max(0.0, min(1.0, opacity))
+        self.update()
+
+    def _world_transform(self, painter: QPainter) -> bool:
+        """Set up painter transform: world coords -> dialog screen coords.
+
+        Returns False if the transform cannot be built (missing data).
+        """
+        bg = self._bg_layer
+        if bg is None or bg.scale == 0:
+            return False
+        s = self._zoom / bg.scale
+        painter.translate(self._pan_x, self._pan_y)
+        painter.scale(s, s)
+        painter.translate(-bg.offset_x, -bg.offset_y)
+        return True
+
+    def _paint_layer_overlay(self, painter: QPainter) -> None:
+        """Draw the flattened layer composite as a semi-transparent overlay."""
+        if self._composite_image is None or self._bg_layer is None:
+            return
+        painter.save()
+        painter.setOpacity(self._layer_opacity)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        if self._world_transform(painter):
+            painter.drawPixmap(self._composite_origin, self._composite_image)
+        painter.restore()
+
+    def _paint_grid_overlay(self, painter: QPainter) -> None:
+        """Draw the hex grid as a semi-transparent overlay in world-space registration."""
+        if (self._grid_renderer is None or self._grid_config is None
+                or self._bg_layer is None):
+            return
+        bg = self._bg_layer
+        if bg.scale == 0:
+            return
+        config = self._grid_config
+        layout = config.create_layout()
+        viewport_world = QRectF(
+            bg.offset_x, bg.offset_y,
+            self._img.width() * bg.scale,
+            self._img.height() * bg.scale,
+        )
+        painter.save()
+        painter.setOpacity(self._grid_opacity)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self._world_transform(painter):
+            self._grid_renderer.paint(painter, viewport_world, layout, config)
+        painter.restore()
+
+    # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
 
@@ -474,6 +564,14 @@ class ImageEditCanvas(QWidget):
         if ov:
             painter.drawImage(QPointF(0, 0), ov)
         painter.restore()
+
+        # Layer composite overlay (world-space registered)
+        if self._show_layer_overlay:
+            self._paint_layer_overlay(painter)
+
+        # Grid overlay (world-space registered)
+        if self._show_grid_overlay:
+            self._paint_grid_overlay(painter)
 
         # Brush size cursor (paint / erase mode)
         if self._mode in ("paint", "erase") and self._cursor_pos is not None:
@@ -604,7 +702,9 @@ class BackgroundEditDialog(QDialog):
 
     apply_to_new_layer = Signal(QImage)
 
-    def __init__(self, layer, command_stack, parent=None):
+    def __init__(self, layer, command_stack, parent=None, *,
+                 grid_config=None, grid_renderer=None,
+                 composite_image=None, composite_origin=None):
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("Edit Background Image")
         self.setModal(False)
@@ -612,6 +712,9 @@ class BackgroundEditDialog(QDialog):
 
         self._layer = layer
         self._command_stack = command_stack
+        self._grid_config = grid_config
+        self._grid_renderer = grid_renderer
+        self._composite_image = composite_image
 
         src = layer.get_qimage()
         working = src.copy().convertToFormat(QImage.Format.Format_ARGB32) if (src and not src.isNull()) else QImage()
@@ -678,12 +781,12 @@ class BackgroundEditDialog(QDialog):
         paint_gl.addWidget(QLabel("Brush Size:"))
         size_row = QHBoxLayout()
         self._size_slider = QSlider(Qt.Orientation.Horizontal)
-        self._size_slider.setRange(1, 200)
+        self._size_slider.setRange(1, 500)
         self._size_slider.setValue(15)
         self._size_slider.valueChanged.connect(self._on_size_slider)
         size_row.addWidget(self._size_slider, stretch=1)
         self._size_spin = QSpinBox()
-        self._size_spin.setRange(1, 200)
+        self._size_spin.setRange(1, 500)
         self._size_spin.setValue(15)
         self._size_spin.setSuffix(" px")
         self._size_spin.valueChanged.connect(self._on_size_spin)
@@ -730,7 +833,7 @@ class BackgroundEditDialog(QDialog):
         post_row.addWidget(QLabel("Levels:"))
         self._post_spin = QSpinBox()
         self._post_spin.setRange(2, 16)
-        self._post_spin.setValue(4)
+        self._post_spin.setValue(5)
         self._post_spin.setToolTip("2 = 2 colors per channel (very harsh), 8 = gentle")
         post_row.addWidget(self._post_spin)
         filter_gl.addLayout(post_row)
@@ -782,7 +885,7 @@ class BackgroundEditDialog(QDialog):
         outline_group = QGroupBox("Outline")
         outline_gl = QHBoxLayout(outline_group)
         outline_gl.setContentsMargins(6, 4, 6, 4)
-        self._outline_btn = QPushButton("Add Black Outline")
+        self._outline_btn = QPushButton("Add Outline")
         self._outline_btn.clicked.connect(self._on_outline)
         outline_gl.addWidget(self._outline_btn)
         outline_gl.addWidget(QLabel("W:"))
@@ -793,6 +896,60 @@ class BackgroundEditDialog(QDialog):
         outline_gl.addWidget(self._outline_spin)
         tl.addWidget(outline_group)
 
+        # Overlays (grid + layers)
+        overlay_group = QGroupBox("Overlays")
+        overlay_gl = QVBoxLayout(overlay_group)
+        overlay_gl.setContentsMargins(6, 4, 6, 4)
+        overlay_gl.setSpacing(4)
+
+        self._grid_overlay_cb = QCheckBox("Show Grid")
+        self._grid_overlay_cb.setToolTip(
+            "Show the hex grid overlay in world-space registration"
+        )
+        self._grid_overlay_cb.toggled.connect(self._on_grid_overlay_toggled)
+        overlay_gl.addWidget(self._grid_overlay_cb)
+
+        grid_op_row = QHBoxLayout()
+        grid_op_row.addWidget(QLabel("Opacity:"))
+        self._grid_op_slider = QSlider(Qt.Orientation.Horizontal)
+        self._grid_op_slider.setRange(0, 100)
+        self._grid_op_slider.setValue(50)
+        self._grid_op_slider.setEnabled(False)
+        self._grid_op_slider.valueChanged.connect(self._on_grid_opacity_changed)
+        grid_op_row.addWidget(self._grid_op_slider, stretch=1)
+        self._grid_op_lbl = QLabel("50%")
+        self._grid_op_lbl.setFixedWidth(36)
+        grid_op_row.addWidget(self._grid_op_lbl)
+        overlay_gl.addLayout(grid_op_row)
+
+        self._layer_overlay_cb = QCheckBox("Show Layers")
+        self._layer_overlay_cb.setToolTip(
+            "Show all other visible layers as a composite overlay"
+        )
+        self._layer_overlay_cb.toggled.connect(self._on_layer_overlay_toggled)
+        overlay_gl.addWidget(self._layer_overlay_cb)
+
+        layer_op_row = QHBoxLayout()
+        layer_op_row.addWidget(QLabel("Opacity:"))
+        self._layer_op_slider = QSlider(Qt.Orientation.Horizontal)
+        self._layer_op_slider.setRange(0, 100)
+        self._layer_op_slider.setValue(50)
+        self._layer_op_slider.setEnabled(False)
+        self._layer_op_slider.valueChanged.connect(self._on_layer_opacity_changed)
+        layer_op_row.addWidget(self._layer_op_slider, stretch=1)
+        self._layer_op_lbl = QLabel("50%")
+        self._layer_op_lbl.setFixedWidth(36)
+        layer_op_row.addWidget(self._layer_op_lbl)
+        overlay_gl.addLayout(layer_op_row)
+
+        # Disable if project data not available
+        if grid_config is None or grid_renderer is None:
+            self._grid_overlay_cb.setEnabled(False)
+        if composite_image is None:
+            self._layer_overlay_cb.setEnabled(False)
+
+        tl.addWidget(overlay_group)
+
         tl.addStretch()
         root.addWidget(tool_panel)
 
@@ -801,7 +958,14 @@ class BackgroundEditDialog(QDialog):
         right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(4)
 
-        self._canvas = ImageEditCanvas(working)
+        self._canvas = ImageEditCanvas(
+            working,
+            grid_config=grid_config,
+            grid_renderer=grid_renderer,
+            composite_image=composite_image,
+            composite_origin=composite_origin,
+            bg_layer=layer,
+        )
         self._canvas.selection_changed.connect(self._on_sel_changed)
         self._canvas.brush_size_changed.connect(self._on_brush_size_from_canvas)
         right.addWidget(self._canvas, stretch=1)
@@ -976,11 +1140,30 @@ class BackgroundEditDialog(QDialog):
         from app.commands.background_commands import EditImageCommand
         cmd = EditImageCommand(self._layer, self._canvas.get_image(), "Edit Image")
         self._command_stack.execute(cmd)
+        self._layer.clip_to_grid = True
         self.accept()
 
     def _on_apply_to_new_layer(self) -> None:
         self.apply_to_new_layer.emit(self._canvas.get_image())
         self.accept()
+
+    # Overlay toggles
+
+    def _on_grid_overlay_toggled(self, checked: bool) -> None:
+        self._canvas.set_grid_overlay(checked)
+        self._grid_op_slider.setEnabled(checked)
+
+    def _on_layer_overlay_toggled(self, checked: bool) -> None:
+        self._canvas.set_layer_overlay(checked)
+        self._layer_op_slider.setEnabled(checked)
+
+    def _on_grid_opacity_changed(self, value: int) -> None:
+        self._grid_op_lbl.setText(f"{value}%")
+        self._canvas.set_grid_opacity(value / 100.0)
+
+    def _on_layer_opacity_changed(self, value: int) -> None:
+        self._layer_op_lbl.setText(f"{value}%")
+        self._canvas.set_layer_opacity(value / 100.0)
 
     def _on_sel_changed(self) -> None:
         has = self._canvas.has_selection()

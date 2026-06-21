@@ -56,8 +56,11 @@ class FreeformPathLayer(Layer):
         self.shadow_spread: float = 0.0
         self.shadow_size: float = 5.0
 
-    def add_path(self, obj: FreeformPathObject) -> None:
-        self.paths[obj.id] = obj
+    def add_path(self, obj: FreeformPathObject, bottom: bool = False) -> None:
+        if bottom:
+            self.paths = {obj.id: obj, **self.paths}
+        else:
+            self.paths[obj.id] = obj
         self.mark_dirty()
 
     def remove_path(self, obj: FreeformPathObject) -> None:

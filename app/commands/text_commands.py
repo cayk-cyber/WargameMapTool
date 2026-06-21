@@ -98,6 +98,34 @@ class EditTextCommand(Command):
         return "Edit text"
 
 
+class SetAllTextOverGridCommand(Command):
+    """Set over_grid on ALL text objects in the layer at once."""
+
+    def __init__(self, layer: TextLayer, value: bool):
+        self._layer = layer
+        self._value = value
+        # Snapshot per-object old values for undo
+        self._old_values: list[tuple[TextObject, bool]] = [
+            (obj, obj.over_grid) for obj in layer.objects
+        ]
+
+    def execute(self) -> None:
+        for obj in self._layer.objects:
+            obj.over_grid = self._value
+        self._layer._recount_over_grid()
+        self._layer.mark_dirty()
+
+    def undo(self) -> None:
+        for obj, old in self._old_values:
+            obj.over_grid = old
+        self._layer._recount_over_grid()
+        self._layer.mark_dirty()
+
+    @property
+    def description(self) -> str:
+        return "Set all text over grid"
+
+
 class EditTextLayerEffectsCommand(Command):
     """Edit layer-level effects (shadow)."""
 

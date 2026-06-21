@@ -124,6 +124,7 @@ class FreeformPathOptions:
         mode_btn_layout.addWidget(select_btn)
         mode_btn_layout.addStretch()
         mode_gl.addLayout(mode_btn_layout)
+
         layout.addWidget(mode_group)
 
         # ===== Presets group =====
@@ -420,6 +421,14 @@ class FreeformPathOptions:
         self._fp_opacity_spin.valueChanged.connect(self._on_opacity_spin)
         opacity_row.addWidget(self._fp_opacity_spin)
         main_gl.addLayout(opacity_row)
+
+        self._fp_draw_bottom_cb = QCheckBox("Draw on Bottom")
+        self._fp_draw_bottom_cb.setToolTip(
+            "New paths are drawn below existing paths instead of on top"
+        )
+        self._fp_draw_bottom_cb.setChecked(tool.draw_on_bottom)
+        self._fp_draw_bottom_cb.toggled.connect(self._on_draw_bottom_toggled)
+        main_gl.addWidget(self._fp_draw_bottom_cb)
 
         # Type
         lt_row = QHBoxLayout()
@@ -1165,6 +1174,11 @@ class FreeformPathOptions:
             self._fp_tool._selected = None
             self._fp_tool._interaction = None
             self._fp_tool._notify_selection()  # L13: always notify, not just on switch to draw
+            self.dock._tool_manager.notify_cursor_changed()
+
+    def _on_draw_bottom_toggled(self, checked: bool) -> None:
+        if self._fp_tool:
+            self._fp_tool.draw_on_bottom = checked
 
     # --- Smoothness ---
 

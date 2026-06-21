@@ -42,7 +42,7 @@ class HexsideTool(Tool):
     def __init__(self, project: Project, command_stack: CommandStack):
         self._project = project
         self._command_stack = command_stack
-        self.mode: str = "place"  # "place" or "select"
+        self.mode: str = "place"  # "place", "falloff", "teeth", or "select"
 
         # Placement settings
         self.paint_mode: str = "color"  # "color" or "texture"
@@ -54,7 +54,6 @@ class HexsideTool(Tool):
         self.outline_texture_id: str = ""
         self.outline_texture_zoom: float = 1.0
         self.outline_texture_rotation: float = 0.0
-        self.shift_enabled: bool = False
         self.shift: float = 0.0
         self.random: bool = False
         self.random_amplitude: float = 3.0
@@ -70,14 +69,27 @@ class HexsideTool(Tool):
         self.opacity: float = 1.0
         self.outline_opacity: float = 1.0
 
+        # Falloff mode settings
+        self.falloff_width: float = 20.0
+        self.falloff_amount: float = 1.0
+        self.falloff_random: float = 0.0
+
+        # Teeth mode settings
+        self.teeth_count: int = 4
+        self.teeth_size: float = 8.0
+        self.teeth_color: str = "#000000"
+        self.teeth_opacity: float = 1.0
+        self._teeth_edges_in_drag: set = set()
+
         # Hover state
         self._hover_edge: tuple[Hex, int] | None = None  # (hex, direction)
         self._last_world_pos: QPointF = QPointF(0, 0)
 
-        # Drag state (place mode)
+        # Drag state (place and falloff modes)
         self._is_dragging: bool = False
         self._drag_command: CompoundCommand | None = None
         self._placed_edges_in_drag: set = set()
+        self._falloff_edges_in_drag: set = set()
 
         # Select mode state
         self._selected: HexsideObject | None = None
@@ -106,7 +118,6 @@ class HexsideTool(Tool):
         self.outline_texture_id = ""
         self.outline_texture_zoom = 1.0
         self.outline_texture_rotation = 0.0
-        self.shift_enabled = False
         self.shift = 0.0
         self.random = False
         self.random_amplitude = 3.0
@@ -121,6 +132,14 @@ class HexsideTool(Tool):
         self.texture_rotation = 0.0
         self.opacity = 1.0
         self.outline_opacity = 1.0
+        self.falloff_width = 20.0
+        self.falloff_amount = 1.0
+        self.falloff_random = 0.0
+        self.teeth_count = 4
+        self.teeth_size = 8.0
+        self.teeth_color = "#000000"
+        self.teeth_opacity = 1.0
+        self._teeth_edges_in_drag = set()
         self._hover_edge = None
         self._selected = None
         self._interaction = None
@@ -137,6 +156,8 @@ class HexsideTool(Tool):
     def cursor(self) -> Qt.CursorShape:
         if self.mode == "place":
             return Qt.CursorShape.CrossCursor
+        if self.mode in ("falloff", "teeth"):
+            return Qt.CursorShape.PointingHandCursor
         return Qt.CursorShape.ArrowCursor
 
     def _notify_selection(self) -> None:
@@ -166,8 +187,11 @@ class HexsideTool(Tool):
 
         if key in self._placed_edges_in_drag:
             return
-        if layer.get_hexside_at_edge(hex_c, neighbor) is not None:
-            return  # Edge already occupied
+
+        existing = layer.get_hexside_at_edge(hex_c, neighbor)
+        # Skip if a real (visible) hexside already exists
+        if existing is not None and (existing.width > 0 or existing.opacity > 0):
+            return
 
         self._placed_edges_in_drag.add(key)
 
@@ -177,6 +201,18 @@ class HexsideTool(Tool):
         if a > b:
             a, b = b, a
 
+        # Preserve falloff from existing invisible carrier
+        fo_side = existing.falloff_side if existing else ""
+        fo_width = existing.falloff_width if existing else 20.0
+        fo_amount = existing.falloff_amount if existing else 1.0
+        fo_random = existing.falloff_random if existing else 0.0
+        fo_rseed = existing.falloff_random_seed if existing else _random.randint(0, 999999)
+        # Preserve teeth from existing invisible carrier
+        te_side = existing.teeth_side if existing else ""
+        te_count = existing.teeth_count if existing else 4
+        te_size = existing.teeth_size if existing else 8.0
+        te_color = existing.teeth_color if existing else "#000000"
+        te_opacity = existing.teeth_opacity if existing else 1.0
         obj = HexsideObject(
             hex_a_q=a[0],
             hex_a_r=a[1],
@@ -190,7 +226,6 @@ class HexsideTool(Tool):
             outline_texture_id=self.outline_texture_id,
             outline_texture_zoom=self.outline_texture_zoom,
             outline_texture_rotation=self.outline_texture_rotation,
-            shift_enabled=self.shift_enabled,
             shift=self.shift,
             random=self.random,
             random_seed=_random.randint(0, 999999),
@@ -206,6 +241,16 @@ class HexsideTool(Tool):
             texture_rotation=self.texture_rotation,
             opacity=self.opacity,
             outline_opacity=self.outline_opacity,
+            falloff_side=fo_side,
+            falloff_width=fo_width,
+            falloff_amount=fo_amount,
+            falloff_random=fo_random,
+            falloff_random_seed=fo_rseed,
+            teeth_side=te_side,
+            teeth_count=te_count,
+            teeth_size=te_size,
+            teeth_color=te_color,
+            teeth_opacity=te_opacity,
         )
 
         # Snap ep_a/ep_b and random_endpoint to existing hexsides sharing a vertex.
@@ -439,6 +484,40 @@ class HexsideTool(Tool):
                         cmd = RemoveHexsideCommand(layer, existing)
                         self._command_stack.execute(cmd)
 
+        elif self.mode == "falloff":
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._is_dragging = True
+                self._drag_command = CompoundCommand("Apply falloff")
+                self._falloff_edges_in_drag = set()
+                self._apply_falloff_at(layer, layout, wx, wy, hex_coord)
+
+            elif event.button() == Qt.MouseButton.RightButton:
+                # Remove falloff from nearest edge
+                if self._project.grid_config.is_valid_hex(hex_coord):
+                    direction, _dist = nearest_hex_edge(layout, hex_coord, wx, wy)
+                    neighbor = hex_neighbor(hex_coord, direction)
+                    existing = layer.get_hexside_at_edge(hex_coord, neighbor)
+                    if existing and existing.falloff_side:
+                        cmd = EditHexsideCommand(layer, existing, falloff_side="")
+                        self._command_stack.execute(cmd)
+
+        elif self.mode == "teeth":
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._is_dragging = True
+                self._drag_command = CompoundCommand("Apply teeth")
+                self._teeth_edges_in_drag = set()
+                self._apply_teeth_at(layer, layout, wx, wy, hex_coord)
+
+            elif event.button() == Qt.MouseButton.RightButton:
+                # Remove teeth from nearest edge
+                if self._project.grid_config.is_valid_hex(hex_coord):
+                    direction, _dist = nearest_hex_edge(layout, hex_coord, wx, wy)
+                    neighbor = hex_neighbor(hex_coord, direction)
+                    existing = layer.get_hexside_at_edge(hex_coord, neighbor)
+                    if existing and existing.teeth_side:
+                        cmd = EditHexsideCommand(layer, existing, teeth_side="")
+                        self._command_stack.execute(cmd)
+
         else:  # select mode
             if event.button() != Qt.MouseButton.LeftButton:
                 return
@@ -524,6 +603,36 @@ class HexsideTool(Tool):
             if self._is_dragging and (event.buttons() & Qt.MouseButton.LeftButton):
                 self._place_at_hover(layer, layout)
 
+        elif self.mode == "falloff":
+            # Hover edge detection (same as place mode)
+            if not self._project.grid_config.is_valid_hex(hex_coord):
+                self._hover_edge = None
+            else:
+                direction, dist = nearest_hex_edge(layout, hex_coord, wx, wy)
+                if dist < self._project.grid_config.hex_size * 0.6:
+                    self._hover_edge = (hex_coord, direction)
+                else:
+                    self._hover_edge = None
+
+            # Handle drag falloff application
+            if self._is_dragging and (event.buttons() & Qt.MouseButton.LeftButton):
+                self._apply_falloff_at(layer, layout, wx, wy, hex_coord)
+
+        elif self.mode == "teeth":
+            # Hover edge detection (same as place/falloff mode)
+            if not self._project.grid_config.is_valid_hex(hex_coord):
+                self._hover_edge = None
+            else:
+                direction, dist = nearest_hex_edge(layout, hex_coord, wx, wy)
+                if dist < self._project.grid_config.hex_size * 0.6:
+                    self._hover_edge = (hex_coord, direction)
+                else:
+                    self._hover_edge = None
+
+            # Handle drag teeth application
+            if self._is_dragging and (event.buttons() & Qt.MouseButton.LeftButton):
+                self._apply_teeth_at(layer, layout, wx, wy, hex_coord)
+
         elif self.mode == "select":
             if self._interaction == "control_point" and self._selected:
                 direction_idx = layer._find_direction(self._selected)
@@ -602,6 +711,22 @@ class HexsideTool(Tool):
                     self._command_stack.push_compound(self._drag_command)
                 self._drag_command = None
                 self._placed_edges_in_drag.clear()
+
+        elif self.mode == "falloff":
+            if event.button() == Qt.MouseButton.LeftButton and self._is_dragging:
+                self._is_dragging = False
+                if self._drag_command and not self._drag_command.is_empty:
+                    self._command_stack.push_compound(self._drag_command)
+                self._drag_command = None
+                self._falloff_edges_in_drag.clear()
+
+        elif self.mode == "teeth":
+            if event.button() == Qt.MouseButton.LeftButton and self._is_dragging:
+                self._is_dragging = False
+                if self._drag_command and not self._drag_command.is_empty:
+                    self._command_stack.push_compound(self._drag_command)
+                self._drag_command = None
+                self._teeth_edges_in_drag.clear()
 
         elif self.mode == "select":
             if event.button() == Qt.MouseButton.LeftButton and self._interaction == "control_point":
@@ -693,6 +818,154 @@ class HexsideTool(Tool):
         cmd = SyncRandomEndpointCommand(layer, changes)
         self._command_stack.execute(cmd)
 
+    # --- Falloff mode helpers ---
+
+    def _apply_falloff_at(
+        self, layer: HexsideLayer, layout: Layout,
+        wx: float, wy: float, hex_coord: Hex,
+    ) -> None:
+        """Apply falloff at the nearest hex edge, creating an invisible hexside if needed."""
+        if not self._project.grid_config.is_valid_hex(hex_coord):
+            return
+
+        direction, _dist = nearest_hex_edge(layout, hex_coord, wx, wy)
+        neighbor = hex_neighbor(hex_coord, direction)
+        key = hex_edge_key(hex_coord, neighbor)
+
+        if key in self._falloff_edges_in_drag:
+            return
+        self._falloff_edges_in_drag.add(key)
+
+        # Canonical order
+        a_q, a_r = key[0]
+        b_q, b_r = key[1]
+        hex_a = Hex(a_q, a_r)
+        hex_b = Hex(b_q, b_r)
+
+        # Determine which side of the edge was clicked
+        ca_x, ca_y = hex_to_pixel(layout, hex_a)
+        cb_x, cb_y = hex_to_pixel(layout, hex_b)
+        nx = cb_x - ca_x
+        ny = cb_y - ca_y
+        length = math.hypot(nx, ny)
+        if length == 0:
+            return
+        nx /= length
+        ny /= length
+        mid_x = (ca_x + cb_x) / 2
+        mid_y = (ca_y + cb_y) / 2
+        dot = (wx - mid_x) * nx + (wy - mid_y) * ny
+        new_side = "b" if dot > 0 else "a"
+
+        # Check that the SOURCE hex (opposite side) has a fill
+        if new_side == "a":
+            source_key = (b_q, b_r)
+        else:
+            source_key = (a_q, a_r)
+        has_fill = (
+            source_key in layer._fill_colors
+            or source_key in layer._fill_textures
+        )
+        if not has_fill:
+            return
+
+        falloff_kwargs = dict(
+            falloff_side=new_side,
+            falloff_width=self.falloff_width,
+            falloff_amount=self.falloff_amount,
+            falloff_random=self.falloff_random,
+            falloff_random_seed=_random.randint(0, 999999),
+        )
+
+        existing = layer.get_hexside_at_edge(hex_a, hex_b)
+        if existing:
+            # Edit existing hexside to add/update falloff
+            cmd = EditHexsideCommand(layer, existing, **falloff_kwargs)
+        else:
+            # Create invisible carrier hexside (width=0, opacity=0)
+            obj = HexsideObject(
+                hex_a_q=a_q, hex_a_r=a_r,
+                hex_b_q=b_q, hex_b_r=b_r,
+                width=0.0,
+                opacity=0.0,
+                **falloff_kwargs,
+            )
+            cmd = PlaceHexsideCommand(layer, obj)
+
+        if self._drag_command:
+            self._drag_command.add(cmd)
+            cmd.execute()
+        else:
+            self._command_stack.execute(cmd)
+
+    # --- Teeth mode helpers ---
+
+    def _apply_teeth_at(
+        self, layer: HexsideLayer, layout: Layout,
+        wx: float, wy: float, hex_coord: Hex,
+    ) -> None:
+        """Apply teeth at the nearest hex edge, creating an invisible hexside if needed."""
+        if not self._project.grid_config.is_valid_hex(hex_coord):
+            return
+
+        direction, _dist = nearest_hex_edge(layout, hex_coord, wx, wy)
+        neighbor = hex_neighbor(hex_coord, direction)
+        key = hex_edge_key(hex_coord, neighbor)
+
+        if key in self._teeth_edges_in_drag:
+            return
+        self._teeth_edges_in_drag.add(key)
+
+        # Canonical order
+        a_q, a_r = key[0]
+        b_q, b_r = key[1]
+        hex_a = Hex(a_q, a_r)
+        hex_b = Hex(b_q, b_r)
+
+        # Determine which side of the edge was clicked
+        ca_x, ca_y = hex_to_pixel(layout, hex_a)
+        cb_x, cb_y = hex_to_pixel(layout, hex_b)
+        nx = cb_x - ca_x
+        ny = cb_y - ca_y
+        length = math.hypot(nx, ny)
+        if length == 0:
+            return
+        nx /= length
+        ny /= length
+        mid_x = (ca_x + cb_x) / 2
+        mid_y = (ca_y + cb_y) / 2
+        dot = (wx - mid_x) * nx + (wy - mid_y) * ny
+        new_side = "b" if dot > 0 else "a"
+
+        teeth_kwargs = dict(
+            teeth_side=new_side,
+            teeth_count=self.teeth_count,
+            teeth_size=self.teeth_size,
+            teeth_color=self.teeth_color,
+            teeth_opacity=self.teeth_opacity,
+        )
+
+        existing = layer.get_hexside_at_edge(hex_a, hex_b)
+        if existing:
+            # Edit existing hexside to add/update teeth
+            cmd = EditHexsideCommand(layer, existing, **teeth_kwargs)
+        else:
+            # Create invisible carrier hexside (width=0, opacity=0)
+            obj = HexsideObject(
+                hex_a_q=a_q, hex_a_r=a_r,
+                hex_b_q=b_q, hex_b_r=b_r,
+                width=0.0,
+                opacity=0.0,
+                **teeth_kwargs,
+            )
+            cmd = PlaceHexsideCommand(layer, obj)
+
+        if self._drag_command:
+            self._drag_command.add(cmd)
+            cmd.execute()
+        else:
+            self._command_stack.execute(cmd)
+
     def key_press(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Delete and self._selected:
             layer = self._get_active_hexside_layer()
@@ -719,8 +992,8 @@ class HexsideTool(Tool):
         zoom_scale = transform.m11() if transform.m11() > 0 else 1.0
         self._cached_inv_scale = 1.0 / zoom_scale
 
-        # Place mode: highlight hover edge
-        if self.mode == "place" and self._hover_edge:
+        # Place / Falloff / Teeth mode: highlight hover edge
+        if self.mode in ("place", "falloff", "teeth") and self._hover_edge:
             hex_c, direction = self._hover_edge
             v1, v2 = hex_edge_vertices(layout, hex_c, direction)
 

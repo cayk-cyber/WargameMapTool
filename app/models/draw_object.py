@@ -9,8 +9,22 @@ import uuid
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF
 from PySide6.QtGui import QColor, QImage
 
-# Maximum mask dimension in pixels.  0 = no limit (full world-resolution).
-_MAX_MASK_DIM = 0
+# Safety cap: maximum mask dimension in pixels per axis.
+_MAX_MASK_DIM = 8192
+
+# Draw quality scale: 1.0 = Performance (1× world-res), 2.0 = Quality (2× world-res).
+_draw_quality_scale: float = 1.0
+
+
+def set_draw_quality_mode(quality: bool) -> None:
+    """Set draw mask quality scale (True = 2×, False = 1×)."""
+    global _draw_quality_scale
+    _draw_quality_scale = 2.0 if quality else 1.0
+
+
+def get_draw_quality_scale() -> float:
+    """Return current draw quality scale factor."""
+    return _draw_quality_scale
 
 
 class DrawChannel:
@@ -64,17 +78,21 @@ class DrawChannel:
     def ensure_mask(self, world_rect: QRectF) -> None:
         """Create mask_image if it does not exist yet (idempotent).
 
-        The mask covers world_rect at 1:1 world-pixel resolution (no downsampling)
-        unless _MAX_MASK_DIM is set, in which case it caps each dimension to 2048px.
+        The mask covers world_rect at _draw_quality_scale × world-pixel
+        resolution (1× Performance, 2× Quality).  Capped to _MAX_MASK_DIM
+        per axis as safety net.
         """
         if self.mask_image is not None:
             return
 
         w_raw = max(1, math.ceil(world_rect.width()))
         h_raw = max(1, math.ceil(world_rect.height()))
-        scale = 1.0
-        if _MAX_MASK_DIM > 0 and (w_raw > _MAX_MASK_DIM or h_raw > _MAX_MASK_DIM):
-            scale = min(_MAX_MASK_DIM / w_raw, _MAX_MASK_DIM / h_raw)
+        scale = _draw_quality_scale
+        w_desired = max(1, round(w_raw * scale))
+        h_desired = max(1, round(h_raw * scale))
+        if _MAX_MASK_DIM > 0 and (w_desired > _MAX_MASK_DIM or h_desired > _MAX_MASK_DIM):
+            cap = min(_MAX_MASK_DIM / w_desired, _MAX_MASK_DIM / h_desired)
+            scale *= cap
         w = max(1, int(w_raw * scale))
         h = max(1, int(h_raw * scale))
 
@@ -82,6 +100,67 @@ class DrawChannel:
         self._mask_world_scale = scale
         self.mask_image = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
         self.mask_image.fill(QColor(0, 0, 0, 0))  # fully transparent = nothing painted
+
+    def rescale_mask(self, new_scale: float) -> None:
+        """Rescale an existing mask to a new world scale (e.g. 1.0 → 2.0).
+
+        Preserves painted content via smooth bilinear interpolation.
+        No-op if mask is None or the scale is already matching.
+        """
+        if self.mask_image is None:
+            return
+        if abs(self._mask_world_scale - new_scale) < 0.001:
+            return
+        from PySide6.QtCore import Qt as _Qt
+        ratio = new_scale / self._mask_world_scale
+        new_w = max(1, round(self.mask_image.width() * ratio))
+        new_h = max(1, round(self.mask_image.height() * ratio))
+        self.mask_image = self.mask_image.scaled(
+            new_w, new_h,
+            _Qt.AspectRatioMode.IgnoreAspectRatio,
+            _Qt.TransformationMode.SmoothTransformation,
+        )
+        self._mask_world_scale = new_scale
+
+    def resize_mask(self, new_world_rect: QRectF) -> None:
+        """Resize mask to cover a new (larger/smaller) world rect, preserving content."""
+        if self.mask_image is None:
+            return
+        old_mask = self.mask_image
+        old_offset = self._mask_world_offset
+        old_scale = self._mask_world_scale
+
+        # Create new mask at same quality scale
+        w_raw = max(1, math.ceil(new_world_rect.width()))
+        h_raw = max(1, math.ceil(new_world_rect.height()))
+        scale = old_scale  # preserve quality scale
+        w_desired = max(1, round(w_raw * scale))
+        h_desired = max(1, round(h_raw * scale))
+        if _MAX_MASK_DIM > 0 and (w_desired > _MAX_MASK_DIM or h_desired > _MAX_MASK_DIM):
+            cap = min(_MAX_MASK_DIM / w_desired, _MAX_MASK_DIM / h_desired)
+            scale *= cap
+        w = max(1, int(w_raw * scale))
+        h = max(1, int(h_raw * scale))
+
+        new_mask = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+        new_mask.fill(QColor(0, 0, 0, 0))  # transparent
+
+        # Composite old mask at correct position in new mask
+        from PySide6.QtCore import QPointF as _QPointF
+        from PySide6.QtGui import QPainter as _P
+
+        p = _P(new_mask)
+        ox = (old_offset[0] - new_world_rect.x()) * scale
+        oy = (old_offset[1] - new_world_rect.y()) * scale
+        sx = scale / old_scale
+        p.translate(ox, oy)
+        p.scale(sx, sx)
+        p.drawImage(_QPointF(0, 0), old_mask)
+        p.end()
+
+        self.mask_image = new_mask
+        self._mask_world_offset = (new_world_rect.x(), new_world_rect.y())
+        self._mask_world_scale = scale
 
     def get_mask_snapshot(self) -> QImage | None:
         """Return a deep copy of the current mask for undo purposes."""

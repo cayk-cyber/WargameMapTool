@@ -44,7 +44,6 @@ class HexsideObject:
     outline_texture_rotation: float = 0.0
 
     # Shift: auto-perpendicular displacement toward matching adjacent hex fill
-    shift_enabled: bool = False  # Only allowed when outline is False
     shift: float = 0.0  # Magnitude in world pixels (0.0 to 15.0), direction auto-detected
 
     # Random waviness
@@ -84,6 +83,20 @@ class HexsideObject:
     # Opacity (0.0 = transparent, 1.0 = opaque)
     opacity: float = 1.0          # main hexside line
     outline_opacity: float = 1.0  # outline only
+
+    # Falloff band (terrain blending gradient extending into one adjacent hex)
+    falloff_side: str = ""        # "" = none, "a" = into hex_a, "b" = into hex_b
+    falloff_width: float = 20.0   # how far band extends into hex (world pixels)
+    falloff_amount: float = 1.0   # 0.0 = hard edge, 1.0 = full gradient
+    falloff_random: float = 0.0   # organic edge variation amplitude (world pixels, 0=smooth)
+    falloff_random_seed: int = field(default_factory=lambda: _random.randint(0, 999999))
+
+    # Teeth decorators (small triangles along one side of the hexside)
+    teeth_side: str = ""          # "" = none, "a" = toward hex_a, "b" = toward hex_b
+    teeth_count: int = 4          # number of triangles (3-6)
+    teeth_size: float = 8.0       # triangle height in world pixels
+    teeth_color: str = "#000000"  # fill color
+    teeth_opacity: float = 1.0    # opacity (0.0-1.0)
 
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
@@ -143,10 +156,8 @@ class HexsideObject:
                     data["outline_texture_zoom"] = self.outline_texture_zoom
                 if self.outline_texture_rotation != 0.0:
                     data["outline_texture_rotation"] = self.outline_texture_rotation
-        if self.shift_enabled:
-            data["shift_enabled"] = True
-            if self.shift != 0.0:
-                data["shift"] = self.shift
+        if self.shift != 0.0:
+            data["shift"] = self.shift
         # Always save random_seed so waviness is stable across save/load
         data["random_seed"] = self.random_seed
         if self.random:
@@ -185,6 +196,20 @@ class HexsideObject:
             data["opacity"] = self.opacity
         if self.outline_opacity != 1.0:
             data["outline_opacity"] = self.outline_opacity
+        if self.falloff_side:
+            data["falloff_side"] = self.falloff_side
+            data["falloff_width"] = self.falloff_width
+            data["falloff_amount"] = self.falloff_amount
+            if self.falloff_random > 0:
+                data["falloff_random"] = self.falloff_random
+                data["falloff_random_seed"] = self.falloff_random_seed
+        if self.teeth_side:
+            data["teeth_side"] = self.teeth_side
+            data["teeth_count"] = self.teeth_count
+            data["teeth_size"] = self.teeth_size
+            data["teeth_color"] = self.teeth_color
+            if self.teeth_opacity != 1.0:
+                data["teeth_opacity"] = self.teeth_opacity
         return data
 
     @classmethod
@@ -203,7 +228,6 @@ class HexsideObject:
             outline_texture_id=data.get("outline_texture_id", ""),
             outline_texture_zoom=data.get("outline_texture_zoom", 1.0),
             outline_texture_rotation=data.get("outline_texture_rotation", 0.0),
-            shift_enabled=data.get("shift_enabled", False),
             shift=data.get("shift", 0.0),
             random=data.get("random", False),
             random_seed=data.get("random_seed", _random.randint(0, 999999)),
@@ -224,4 +248,14 @@ class HexsideObject:
             texture_rotation=data.get("texture_rotation", 0.0),
             opacity=data.get("opacity", 1.0),
             outline_opacity=data.get("outline_opacity", 1.0),
+            falloff_side=data.get("falloff_side", ""),
+            falloff_width=data.get("falloff_width", 20.0),
+            falloff_amount=data.get("falloff_amount", 1.0),
+            falloff_random=data.get("falloff_random", 0.0),
+            falloff_random_seed=data.get("falloff_random_seed", _random.randint(0, 999999)),
+            teeth_side=data.get("teeth_side", ""),
+            teeth_count=data.get("teeth_count", 4),
+            teeth_size=data.get("teeth_size", 8.0),
+            teeth_color=data.get("teeth_color", "#000000"),
+            teeth_opacity=data.get("teeth_opacity", 1.0),
         )

@@ -586,7 +586,7 @@ class AssetTool(Tool):
             if self._erase_size_dragging:
                 # Ctrl+drag: adjust brush size (drag up = larger, drag down = smaller)
                 dy = event.position().y() - self._erase_size_start_y
-                new_size = max(5.0, min(300.0, self._erase_size_initial - dy * 0.5))
+                new_size = max(1.0, min(300.0, self._erase_size_initial - dy * 0.5))
                 self.erase_brush_size = new_size
                 if self._on_erase_size_changed:
                     self._on_erase_size_changed(new_size)

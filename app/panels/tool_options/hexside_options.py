@@ -88,11 +88,16 @@ class HexsideOptions:
         mode_group = QGroupBox("Mode")
         mode_gl = QVBoxLayout(mode_group)
         mode_gl.setContentsMargins(6, 4, 6, 4)
-        mode_btn_layout = QHBoxLayout()
 
         place_btn = QPushButton("Place")
         place_btn.setCheckable(True)
-        place_btn.setChecked(tool.mode != "select")  # L07: init from tool state
+        place_btn.setChecked(tool.mode == "place")
+        falloff_btn = QPushButton("Falloff")
+        falloff_btn.setCheckable(True)
+        falloff_btn.setChecked(tool.mode == "falloff")
+        teeth_btn = QPushButton("Teeth")
+        teeth_btn.setCheckable(True)
+        teeth_btn.setChecked(tool.mode == "teeth")
         select_btn = QPushButton("Select")
         select_btn.setCheckable(True)
         select_btn.setChecked(tool.mode == "select")
@@ -100,17 +105,23 @@ class HexsideOptions:
         self._hs_mode_group = QButtonGroup(widget)
         self._hs_mode_group.setExclusive(True)
         self._hs_mode_group.addButton(place_btn, 0)
-        self._hs_mode_group.addButton(select_btn, 1)
+        self._hs_mode_group.addButton(falloff_btn, 1)
+        self._hs_mode_group.addButton(teeth_btn, 2)
+        self._hs_mode_group.addButton(select_btn, 3)
         self._hs_mode_group.idToggled.connect(self._on_hs_mode_changed)
 
-        mode_btn_layout.addWidget(place_btn)
-        mode_btn_layout.addWidget(select_btn)
-        mode_btn_layout.addStretch()
-        mode_gl.addLayout(mode_btn_layout)
+        mode_grid = QGridLayout()
+        mode_grid.setSpacing(4)
+        mode_grid.addWidget(place_btn, 0, 0)
+        mode_grid.addWidget(falloff_btn, 0, 1)
+        mode_grid.addWidget(teeth_btn, 1, 0)
+        mode_grid.addWidget(select_btn, 1, 1)
+        mode_gl.addLayout(mode_grid)
         layout.addWidget(mode_group)
 
         # ===== Presets group =====
-        preset_group = QGroupBox("Presets")
+        self._preset_group = QGroupBox("Presets")
+        preset_group = self._preset_group
         preset_gl = QVBoxLayout(preset_group)
         preset_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -168,7 +179,8 @@ class HexsideOptions:
         self._hsp_update_preview()
 
         # ===== Hexside section =====
-        main_group = QGroupBox("Hexside")
+        self._main_group = QGroupBox("Hexside")
+        main_group = self._main_group
         main_gl = QVBoxLayout(main_group)
         main_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -398,7 +410,8 @@ class HexsideOptions:
         self._hs_ol_current_palette: ColorPalette | None = None
         self._hs_ol_palette_color_buttons: list[QPushButton] = []
 
-        outline_group = QGroupBox("Outline")
+        self._outline_group = QGroupBox("Outline")
+        outline_group = self._outline_group
         outline_gl = QVBoxLayout(outline_group)
         outline_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -612,43 +625,10 @@ class HexsideOptions:
 
         layout.addWidget(outline_group)
 
-        # ===== Shift group =====
-        shift_group = QGroupBox("Shift")
-        shift_gl = QVBoxLayout(shift_group)
-        shift_gl.setContentsMargins(6, 4, 6, 4)
-
-        self._hs_shift_cb = QCheckBox("Enable Auto-Shift")
-        self._hs_shift_cb.setChecked(tool.shift_enabled)
-        self._hs_shift_cb.setEnabled(not tool.outline)
-        self._hs_shift_cb.toggled.connect(self._on_hs_shift_toggled)
-        shift_gl.addWidget(self._hs_shift_cb)
-
-        self._hs_shift_container = QWidget()
-        shift_c_layout = QVBoxLayout(self._hs_shift_container)
-        shift_c_layout.setContentsMargins(0, 0, 0, 0)
-
-        shift_row = QHBoxLayout()
-        self._hs_shift_slider = QSlider(Qt.Orientation.Horizontal)
-        self._hs_shift_slider.setRange(0, 150)
-        self._hs_shift_slider.setValue(int(tool.shift * 10))
-        self._hs_shift_slider.valueChanged.connect(self._on_hs_shift_slider)
-        shift_row.addWidget(self._hs_shift_slider, stretch=1)
-        self._hs_shift_spin = QDoubleSpinBox()
-        self._hs_shift_spin.setRange(0.0, 15.0)
-        self._hs_shift_spin.setSingleStep(0.5)
-        self._hs_shift_spin.setValue(tool.shift)
-        self._hs_shift_spin.setFixedWidth(65)
-        self._hs_shift_spin.valueChanged.connect(self._on_hs_shift_spin)
-        shift_row.addWidget(self._hs_shift_spin)
-        shift_c_layout.addLayout(shift_row)
-
-        self._hs_shift_container.setEnabled(tool.shift_enabled and not tool.outline)
-        shift_gl.addWidget(self._hs_shift_container)
-
-        layout.addWidget(shift_group)
 
         # ===== Random group =====
-        random_group = QGroupBox("Random")
+        self._random_group = QGroupBox("Random")
+        random_group = self._random_group
         random_gl = QVBoxLayout(random_group)
         random_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -752,15 +732,16 @@ class HexsideOptions:
 
         layout.addWidget(random_group)
 
-        # ===== Taper group =====
-        taper_group = QGroupBox("Taper")
-        taper_gl = QVBoxLayout(taper_group)
-        taper_gl.setContentsMargins(6, 4, 6, 4)
+        # ===== Options group (Taper + Shift) =====
+        self._options_group = QGroupBox("Options")
+        options_group = self._options_group
+        options_gl = QVBoxLayout(options_group)
+        options_gl.setContentsMargins(6, 4, 6, 4)
 
         self._hs_taper_cb = QCheckBox("Taper Free Ends")
         self._hs_taper_cb.setChecked(tool.taper)
         self._hs_taper_cb.toggled.connect(self._on_hs_taper_toggled)
-        taper_gl.addWidget(self._hs_taper_cb)
+        options_gl.addWidget(self._hs_taper_cb)
 
         self._hs_taper_container = QWidget()
         taper_c_layout = QVBoxLayout(self._hs_taper_container)
@@ -784,9 +765,156 @@ class HexsideOptions:
         taper_c_layout.addLayout(tl_row)
 
         self._hs_taper_container.setEnabled(tool.taper)
-        taper_gl.addWidget(self._hs_taper_container)
+        options_gl.addWidget(self._hs_taper_container)
 
-        layout.addWidget(taper_group)
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        options_gl.addWidget(sep)
+
+        # Shift slider
+        options_gl.addWidget(QLabel("Shift:"))
+        shift_row = QHBoxLayout()
+        self._hs_shift_slider = QSlider(Qt.Orientation.Horizontal)
+        self._hs_shift_slider.setRange(0, 150)
+        self._hs_shift_slider.setValue(int(tool.shift * 10))
+        self._hs_shift_slider.valueChanged.connect(self._on_hs_shift_slider)
+        shift_row.addWidget(self._hs_shift_slider, stretch=1)
+        self._hs_shift_spin = QDoubleSpinBox()
+        self._hs_shift_spin.setRange(0.0, 15.0)
+        self._hs_shift_spin.setSingleStep(0.5)
+        self._hs_shift_spin.setValue(tool.shift)
+        self._hs_shift_spin.setFixedWidth(65)
+        self._hs_shift_spin.valueChanged.connect(self._on_hs_shift_spin)
+        shift_row.addWidget(self._hs_shift_spin)
+        options_gl.addLayout(shift_row)
+
+        layout.addWidget(options_group)
+
+        # ===== Falloff group (visible only in Falloff mode) =====
+        self._fo_group = QGroupBox("Falloff")
+        fo_gl = QVBoxLayout(self._fo_group)
+        fo_gl.setContentsMargins(6, 4, 6, 4)
+
+        # Width: slider + spin (1.0 - 100.0, step 0.5)
+        fo_gl.addWidget(QLabel("Width:"))
+        fo_width_row = QHBoxLayout()
+        self._fo_width_slider = QSlider(Qt.Orientation.Horizontal)
+        self._fo_width_slider.setRange(2, 200)  # 1.0 - 100.0 in 0.5 steps
+        self._fo_width_slider.setValue(int(tool.falloff_width * 2))
+        self._fo_width_slider.valueChanged.connect(self._on_fo_width_slider)
+        fo_width_row.addWidget(self._fo_width_slider, stretch=1)
+        self._fo_width_spin = QDoubleSpinBox()
+        self._fo_width_spin.setRange(1.0, 100.0)
+        self._fo_width_spin.setSingleStep(0.5)
+        self._fo_width_spin.setValue(tool.falloff_width)
+        self._fo_width_spin.setFixedWidth(65)
+        self._fo_width_spin.valueChanged.connect(self._on_fo_width_spin)
+        fo_width_row.addWidget(self._fo_width_spin)
+        fo_gl.addLayout(fo_width_row)
+
+        # Falloff amount: slider + spin (0 - 100 %, maps to 0.0 - 1.0)
+        fo_gl.addWidget(QLabel("Falloff:"))
+        fo_amount_row = QHBoxLayout()
+        self._fo_amount_slider = QSlider(Qt.Orientation.Horizontal)
+        self._fo_amount_slider.setRange(0, 100)
+        self._fo_amount_slider.setValue(round(tool.falloff_amount * 100))
+        self._fo_amount_slider.valueChanged.connect(self._on_fo_amount_slider)
+        fo_amount_row.addWidget(self._fo_amount_slider, stretch=1)
+        self._fo_amount_spin = QSpinBox()
+        self._fo_amount_spin.setRange(0, 100)
+        self._fo_amount_spin.setSuffix(" %")
+        self._fo_amount_spin.setValue(round(tool.falloff_amount * 100))
+        self._fo_amount_spin.setFixedWidth(65)
+        self._fo_amount_spin.valueChanged.connect(self._on_fo_amount_spin)
+        fo_amount_row.addWidget(self._fo_amount_spin)
+        fo_gl.addLayout(fo_amount_row)
+
+        # Random (organic edge variation, 0.0 - 20.0)
+        fo_gl.addWidget(QLabel("Random:"))
+        fo_random_row = QHBoxLayout()
+        self._fo_random_slider = QSlider(Qt.Orientation.Horizontal)
+        self._fo_random_slider.setRange(0, 200)
+        self._fo_random_slider.setValue(int(tool.falloff_random * 10))
+        self._fo_random_slider.valueChanged.connect(self._on_fo_random_slider)
+        fo_random_row.addWidget(self._fo_random_slider, stretch=1)
+        self._fo_random_spin = QDoubleSpinBox()
+        self._fo_random_spin.setRange(0.0, 20.0)
+        self._fo_random_spin.setSingleStep(0.5)
+        self._fo_random_spin.setValue(tool.falloff_random)
+        self._fo_random_spin.setFixedWidth(65)
+        self._fo_random_spin.valueChanged.connect(self._on_fo_random_spin)
+        fo_random_row.addWidget(self._fo_random_spin)
+        fo_gl.addLayout(fo_random_row)
+
+        self._fo_group.setVisible(tool.mode == "falloff")
+        layout.addWidget(self._fo_group)
+
+        # ===== Teeth group (visible only in Teeth mode) =====
+        self._teeth_group = QGroupBox("Teeth")
+        teeth_gl = QVBoxLayout(self._teeth_group)
+        teeth_gl.setContentsMargins(6, 4, 6, 4)
+
+        # Color
+        teeth_color_row = QHBoxLayout()
+        teeth_color_row.addWidget(QLabel("Color:"))
+        self._teeth_color_btn = QPushButton()
+        self._teeth_color_btn.setFixedSize(40, 25)
+        update_color_btn(self._teeth_color_btn, QColor(tool.teeth_color))
+        self._teeth_color_btn.clicked.connect(self._on_teeth_color_pick)
+        teeth_color_row.addWidget(self._teeth_color_btn)
+        teeth_color_row.addStretch()
+        teeth_gl.addLayout(teeth_color_row)
+
+        # Count: spinbox only (integer 3-6)
+        count_row = QHBoxLayout()
+        count_row.addWidget(QLabel("Count:"))
+        self._teeth_count_spin = QSpinBox()
+        self._teeth_count_spin.setRange(3, 6)
+        self._teeth_count_spin.setValue(tool.teeth_count)
+        self._teeth_count_spin.setFixedWidth(60)
+        self._teeth_count_spin.valueChanged.connect(self._on_teeth_count_changed)
+        count_row.addWidget(self._teeth_count_spin)
+        count_row.addStretch()
+        teeth_gl.addLayout(count_row)
+
+        # Size: slider + spin (1.0 - 40.0, step 0.5)
+        teeth_gl.addWidget(QLabel("Size:"))
+        size_row = QHBoxLayout()
+        self._teeth_size_slider = QSlider(Qt.Orientation.Horizontal)
+        self._teeth_size_slider.setRange(2, 80)  # 1.0-40.0 in 0.5 steps
+        self._teeth_size_slider.setValue(int(tool.teeth_size * 2))
+        self._teeth_size_slider.valueChanged.connect(self._on_teeth_size_slider)
+        size_row.addWidget(self._teeth_size_slider, stretch=1)
+        self._teeth_size_spin = QDoubleSpinBox()
+        self._teeth_size_spin.setRange(1.0, 40.0)
+        self._teeth_size_spin.setSingleStep(0.5)
+        self._teeth_size_spin.setValue(tool.teeth_size)
+        self._teeth_size_spin.setFixedWidth(65)
+        self._teeth_size_spin.valueChanged.connect(self._on_teeth_size_spin)
+        size_row.addWidget(self._teeth_size_spin)
+        teeth_gl.addLayout(size_row)
+
+        # Opacity: slider + spin (0-100 %)
+        teeth_gl.addWidget(QLabel("Opacity:"))
+        opacity_row = QHBoxLayout()
+        self._teeth_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._teeth_opacity_slider.setRange(0, 100)
+        self._teeth_opacity_slider.setValue(round(tool.teeth_opacity * 100))
+        self._teeth_opacity_slider.valueChanged.connect(self._on_teeth_opacity_slider)
+        opacity_row.addWidget(self._teeth_opacity_slider, stretch=1)
+        self._teeth_opacity_spin = QSpinBox()
+        self._teeth_opacity_spin.setRange(0, 100)
+        self._teeth_opacity_spin.setSuffix(" %")
+        self._teeth_opacity_spin.setValue(round(tool.teeth_opacity * 100))
+        self._teeth_opacity_spin.setFixedWidth(65)
+        self._teeth_opacity_spin.valueChanged.connect(self._on_teeth_opacity_spin)
+        opacity_row.addWidget(self._teeth_opacity_spin)
+        teeth_gl.addLayout(opacity_row)
+
+        self._teeth_group.setVisible(tool.mode == "teeth")
+        layout.addWidget(self._teeth_group)
 
         # Initialize main palette
         ensure_default_palette()
@@ -814,7 +942,8 @@ class HexsideOptions:
 
         # ===== Shadow group =====
         layer = self._get_layer()
-        shadow_group = QGroupBox("Shadow")
+        self._shadow_group = QGroupBox("Shadow")
+        shadow_group = self._shadow_group
         shadow_gl = QVBoxLayout(shadow_group)
         shadow_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -943,7 +1072,8 @@ class HexsideOptions:
         layout.addWidget(shadow_group)
 
         # ===== Bevel & Emboss group (includes Structure sub-section) =====
-        bevel_group = QGroupBox("Bevel && Emboss")
+        self._bevel_group = QGroupBox("Bevel && Emboss")
+        bevel_group = self._bevel_group
         bevel_gl = QVBoxLayout(bevel_group)
         bevel_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -1123,6 +1253,12 @@ class HexsideOptions:
         self._struct_container.setEnabled(layer.structure_enabled if layer else False)
         layout.addWidget(bevel_group)
 
+        # Set initial visibility based on mode
+        init_mode_id = {
+            "place": 0, "falloff": 1, "teeth": 2, "select": 3,
+        }.get(tool.mode, 0)
+        self._update_mode_visibility(init_mode_id)
+
         return widget
 
     def close_sidebar(self) -> None:
@@ -1151,10 +1287,33 @@ class HexsideOptions:
 
     def _on_hs_mode_changed(self, button_id: int, checked: bool) -> None:
         if checked and hasattr(self, "_hexside_tool"):
-            self._hexside_tool.mode = "place" if button_id == 0 else "select"
+            mode_map = {0: "place", 1: "falloff", 2: "teeth", 3: "select"}
+            self._hexside_tool.mode = mode_map.get(button_id, "place")
             self._hexside_tool._selected = None
             self._hexside_tool._interaction = None
             self._hexside_tool._notify_selection()
+            self._update_mode_visibility(button_id)
+            self.dock._tool_manager.notify_cursor_changed()
+
+    def _update_mode_visibility(self, button_id: int) -> None:
+        """Show/hide UI groups based on mode: 0=place, 1=falloff, 2=teeth, 3=select."""
+        is_falloff = button_id == 1
+        is_teeth = button_id == 2
+        is_place_or_select = button_id in (0, 3)
+        # Place/Select groups
+        for attr in (
+            "_preset_group", "_main_group", "_outline_group",
+            "_random_group", "_options_group", "_shadow_group", "_bevel_group",
+        ):
+            w = getattr(self, attr, None)
+            if w is not None:
+                w.setVisible(is_place_or_select)
+        # Falloff group
+        if hasattr(self, "_fo_group"):
+            self._fo_group.setVisible(is_falloff)
+        # Teeth group
+        if hasattr(self, "_teeth_group"):
+            self._teeth_group.setVisible(is_teeth)
 
     # --- Selection sync ---
 
@@ -1181,7 +1340,6 @@ class HexsideOptions:
         tool.outline_texture_id = obj.outline_texture_id
         tool.outline_texture_zoom = obj.outline_texture_zoom
         tool.outline_texture_rotation = obj.outline_texture_rotation
-        tool.shift_enabled = obj.shift_enabled
         tool.shift = obj.shift
         tool.random = obj.random
         tool.random_amplitude = obj.random_amplitude
@@ -1276,17 +1434,12 @@ class HexsideOptions:
             self._update_ol_texture_selection()
 
         # Shift
-        self._hs_shift_cb.blockSignals(True)
-        self._hs_shift_cb.setChecked(obj.shift_enabled)
-        self._hs_shift_cb.setEnabled(not obj.outline)
-        self._hs_shift_cb.blockSignals(False)
         self._hs_shift_slider.blockSignals(True)
         self._hs_shift_slider.setValue(int(obj.shift * 10))
         self._hs_shift_slider.blockSignals(False)
         self._hs_shift_spin.blockSignals(True)
         self._hs_shift_spin.setValue(obj.shift)
         self._hs_shift_spin.blockSignals(False)
-        self._hs_shift_container.setEnabled(obj.shift_enabled and not obj.outline)
 
         # Random
         self._hs_random_cb.blockSignals(True)
@@ -1335,6 +1488,51 @@ class HexsideOptions:
         self._hs_taper_spin.setValue(obj.taper_length)
         self._hs_taper_spin.blockSignals(False)
         self._hs_taper_container.setEnabled(obj.taper)
+
+        # Falloff
+        tool.falloff_width = obj.falloff_width
+        tool.falloff_amount = obj.falloff_amount
+        tool.falloff_random = obj.falloff_random
+        self._fo_width_slider.blockSignals(True)
+        self._fo_width_slider.setValue(int(obj.falloff_width * 2))
+        self._fo_width_slider.blockSignals(False)
+        self._fo_width_spin.blockSignals(True)
+        self._fo_width_spin.setValue(obj.falloff_width)
+        self._fo_width_spin.blockSignals(False)
+        self._fo_amount_slider.blockSignals(True)
+        self._fo_amount_slider.setValue(round(obj.falloff_amount * 100))
+        self._fo_amount_slider.blockSignals(False)
+        self._fo_amount_spin.blockSignals(True)
+        self._fo_amount_spin.setValue(round(obj.falloff_amount * 100))
+        self._fo_amount_spin.blockSignals(False)
+        self._fo_random_slider.blockSignals(True)
+        self._fo_random_slider.setValue(int(obj.falloff_random * 10))
+        self._fo_random_slider.blockSignals(False)
+        self._fo_random_spin.blockSignals(True)
+        self._fo_random_spin.setValue(obj.falloff_random)
+        self._fo_random_spin.blockSignals(False)
+
+        # Teeth
+        tool.teeth_count = obj.teeth_count
+        tool.teeth_size = obj.teeth_size
+        tool.teeth_color = obj.teeth_color
+        tool.teeth_opacity = obj.teeth_opacity
+        update_color_btn(self._teeth_color_btn, QColor(obj.teeth_color))
+        self._teeth_count_spin.blockSignals(True)
+        self._teeth_count_spin.setValue(obj.teeth_count)
+        self._teeth_count_spin.blockSignals(False)
+        self._teeth_size_slider.blockSignals(True)
+        self._teeth_size_slider.setValue(int(obj.teeth_size * 2))
+        self._teeth_size_slider.blockSignals(False)
+        self._teeth_size_spin.blockSignals(True)
+        self._teeth_size_spin.setValue(obj.teeth_size)
+        self._teeth_size_spin.blockSignals(False)
+        self._teeth_opacity_slider.blockSignals(True)
+        self._teeth_opacity_slider.setValue(round(obj.teeth_opacity * 100))
+        self._teeth_opacity_slider.blockSignals(False)
+        self._teeth_opacity_spin.blockSignals(True)
+        self._teeth_opacity_spin.setValue(round(obj.teeth_opacity * 100))
+        self._teeth_opacity_spin.blockSignals(False)
 
         # Paint mode
         pm_id = 1 if paint_mode == "texture" else 0
@@ -1459,10 +1657,7 @@ class HexsideOptions:
     def _on_hs_outline_toggled(self, checked: bool) -> None:
         self._hexside_tool.outline = checked
         self._hs_ol_container.setEnabled(checked)
-        # Shift is mutually exclusive with outline
-        self._hs_shift_cb.setEnabled(not checked)
         if checked:
-            self._hs_shift_cb.setChecked(False)
             # Auto-set outline width only if it hasn't been customized yet
             if self._hexside_tool.outline_width <= 0:
                 main_width = self._hexside_tool.width
@@ -1473,9 +1668,6 @@ class HexsideOptions:
                 self._hs_ol_width_spin.blockSignals(True)
                 self._hs_ol_width_spin.setValue(main_width)
                 self._hs_ol_width_spin.blockSignals(False)
-        self._hs_shift_container.setEnabled(
-            self._hs_shift_cb.isChecked() and not checked
-        )
         if checked:
             # M19: include outline_width in the same command so undo restores both atomically
             self._apply_to_selected(outline=True, outline_width=self._hexside_tool.outline_width)
@@ -1491,11 +1683,6 @@ class HexsideOptions:
             update_color_btn(self._hs_ol_color_btn, color)
             self._apply_to_selected(outline_color=color.name())
 
-    def _on_hs_shift_toggled(self, checked: bool) -> None:
-        self._hexside_tool.shift_enabled = checked
-        self._hs_shift_container.setEnabled(checked)
-        self._apply_to_selected(shift_enabled=checked)
-
     def _on_hs_shift_slider(self, value: int) -> None:
         real_val = value / 10.0
         self._hexside_tool.shift = real_val
@@ -1510,6 +1697,95 @@ class HexsideOptions:
         self._hs_shift_slider.setValue(int(value * 10))
         self._hs_shift_slider.blockSignals(False)
         self._apply_to_selected(shift=value)
+
+    # --- Falloff handlers ---
+
+    def _on_fo_width_slider(self, value: int) -> None:
+        real_val = value / 2.0
+        self._hexside_tool.falloff_width = real_val
+        self._fo_width_spin.blockSignals(True)
+        self._fo_width_spin.setValue(real_val)
+        self._fo_width_spin.blockSignals(False)
+
+    def _on_fo_width_spin(self, value: float) -> None:
+        self._hexside_tool.falloff_width = value
+        self._fo_width_slider.blockSignals(True)
+        self._fo_width_slider.setValue(int(value * 2))
+        self._fo_width_slider.blockSignals(False)
+
+    def _on_fo_amount_slider(self, value: int) -> None:
+        real_val = value / 100.0
+        self._hexside_tool.falloff_amount = real_val
+        self._fo_amount_spin.blockSignals(True)
+        self._fo_amount_spin.setValue(value)
+        self._fo_amount_spin.blockSignals(False)
+
+    def _on_fo_amount_spin(self, value: int) -> None:
+        self._hexside_tool.falloff_amount = value / 100.0
+        self._fo_amount_slider.blockSignals(True)
+        self._fo_amount_slider.setValue(value)
+        self._fo_amount_slider.blockSignals(False)
+
+    def _on_fo_random_slider(self, value: int) -> None:
+        real_val = value / 10.0
+        self._hexside_tool.falloff_random = real_val
+        self._fo_random_spin.blockSignals(True)
+        self._fo_random_spin.setValue(real_val)
+        self._fo_random_spin.blockSignals(False)
+
+    def _on_fo_random_spin(self, value: float) -> None:
+        self._hexside_tool.falloff_random = value
+        self._fo_random_slider.blockSignals(True)
+        self._fo_random_slider.setValue(int(value * 10))
+        self._fo_random_slider.blockSignals(False)
+
+    # --- Teeth mode handlers ---
+
+    def _on_teeth_color_pick(self) -> None:
+        if self._hexside_tool is None:
+            return
+        color = QColorDialog.getColor(
+            QColor(self._hexside_tool.teeth_color),
+            self.dock.window(), "Teeth Color",
+        )
+        if color.isValid():
+            self._hexside_tool.teeth_color = color.name()
+            update_color_btn(self._teeth_color_btn, color)
+
+    def _on_teeth_count_changed(self, value: int) -> None:
+        if self._hexside_tool:
+            self._hexside_tool.teeth_count = value
+
+    def _on_teeth_size_slider(self, value: int) -> None:
+        v = value * 0.5
+        if self._hexside_tool:
+            self._hexside_tool.teeth_size = v
+        self._teeth_size_spin.blockSignals(True)
+        self._teeth_size_spin.setValue(v)
+        self._teeth_size_spin.blockSignals(False)
+
+    def _on_teeth_size_spin(self, value: float) -> None:
+        if self._hexside_tool:
+            self._hexside_tool.teeth_size = value
+        self._teeth_size_slider.blockSignals(True)
+        self._teeth_size_slider.setValue(int(value * 2))
+        self._teeth_size_slider.blockSignals(False)
+
+    def _on_teeth_opacity_slider(self, value: int) -> None:
+        v = value / 100.0
+        if self._hexside_tool:
+            self._hexside_tool.teeth_opacity = v
+        self._teeth_opacity_spin.blockSignals(True)
+        self._teeth_opacity_spin.setValue(value)
+        self._teeth_opacity_spin.blockSignals(False)
+
+    def _on_teeth_opacity_spin(self, value: int) -> None:
+        v = value / 100.0
+        if self._hexside_tool:
+            self._hexside_tool.teeth_opacity = v
+        self._teeth_opacity_slider.blockSignals(True)
+        self._teeth_opacity_slider.setValue(value)
+        self._teeth_opacity_slider.blockSignals(False)
 
     def _on_hs_random_toggled(self, checked: bool) -> None:
         self._hexside_tool.random = checked
@@ -2310,7 +2586,6 @@ class HexsideOptions:
             outline_texture_id=tool.outline_texture_id,
             outline_texture_zoom=tool.outline_texture_zoom,
             outline_texture_rotation=tool.outline_texture_rotation,
-            shift_enabled=tool.shift_enabled,
             shift=tool.shift,
             random=tool.random,
             random_amplitude=tool.random_amplitude,
@@ -2325,6 +2600,13 @@ class HexsideOptions:
             texture_rotation=tool.texture_rotation,
             opacity=tool.opacity,
             outline_opacity=tool.outline_opacity,
+            falloff_width=tool.falloff_width,
+            falloff_amount=tool.falloff_amount,
+            falloff_random=tool.falloff_random,
+            teeth_count=tool.teeth_count,
+            teeth_size=tool.teeth_size,
+            teeth_color=tool.teeth_color,
+            teeth_opacity=tool.teeth_opacity,
         )
 
     def _hsp_render_preview(self, preset: HexsidePreset) -> None:
@@ -2357,7 +2639,6 @@ class HexsideOptions:
         tool.outline_texture_id = preset.outline_texture_id
         tool.outline_texture_zoom = preset.outline_texture_zoom
         tool.outline_texture_rotation = preset.outline_texture_rotation
-        tool.shift_enabled = preset.shift_enabled
         tool.shift = preset.shift
         tool.random = preset.random
         tool.random_amplitude = preset.random_amplitude
@@ -2372,6 +2653,13 @@ class HexsideOptions:
         tool.texture_rotation = preset.texture_rotation
         tool.opacity = preset.opacity
         tool.outline_opacity = preset.outline_opacity
+        tool.falloff_width = preset.falloff_width
+        tool.falloff_amount = preset.falloff_amount
+        tool.falloff_random = preset.falloff_random
+        tool.teeth_count = preset.teeth_count
+        tool.teeth_size = preset.teeth_size
+        tool.teeth_color = preset.teeth_color
+        tool.teeth_opacity = preset.teeth_opacity
 
         # Sync UI widgets (block signals to avoid cascading updates)
 
@@ -2424,17 +2712,12 @@ class HexsideOptions:
             self._sync_hs_ol_tex_rot_buttons(int(preset.outline_texture_rotation))
 
         # Shift
-        self._hs_shift_cb.blockSignals(True)
-        self._hs_shift_cb.setChecked(preset.shift_enabled)
-        self._hs_shift_cb.setEnabled(not preset.outline)
-        self._hs_shift_cb.blockSignals(False)
         self._hs_shift_slider.blockSignals(True)
         self._hs_shift_slider.setValue(int(preset.shift * 10))
         self._hs_shift_slider.blockSignals(False)
         self._hs_shift_spin.blockSignals(True)
         self._hs_shift_spin.setValue(preset.shift)
         self._hs_shift_spin.blockSignals(False)
-        self._hs_shift_container.setEnabled(preset.shift_enabled and not preset.outline)
 
         # Random
         self._hs_random_cb.blockSignals(True)
@@ -2483,6 +2766,44 @@ class HexsideOptions:
         self._hs_taper_spin.setValue(preset.taper_length)
         self._hs_taper_spin.blockSignals(False)
         self._hs_taper_container.setEnabled(preset.taper)
+
+        # Falloff
+        self._fo_width_slider.blockSignals(True)
+        self._fo_width_slider.setValue(int(preset.falloff_width * 2))
+        self._fo_width_slider.blockSignals(False)
+        self._fo_width_spin.blockSignals(True)
+        self._fo_width_spin.setValue(preset.falloff_width)
+        self._fo_width_spin.blockSignals(False)
+        self._fo_amount_slider.blockSignals(True)
+        self._fo_amount_slider.setValue(round(preset.falloff_amount * 100))
+        self._fo_amount_slider.blockSignals(False)
+        self._fo_amount_spin.blockSignals(True)
+        self._fo_amount_spin.setValue(round(preset.falloff_amount * 100))
+        self._fo_amount_spin.blockSignals(False)
+        self._fo_random_slider.blockSignals(True)
+        self._fo_random_slider.setValue(int(preset.falloff_random * 10))
+        self._fo_random_slider.blockSignals(False)
+        self._fo_random_spin.blockSignals(True)
+        self._fo_random_spin.setValue(preset.falloff_random)
+        self._fo_random_spin.blockSignals(False)
+
+        # Teeth
+        update_color_btn(self._teeth_color_btn, QColor(preset.teeth_color))
+        self._teeth_count_spin.blockSignals(True)
+        self._teeth_count_spin.setValue(preset.teeth_count)
+        self._teeth_count_spin.blockSignals(False)
+        self._teeth_size_slider.blockSignals(True)
+        self._teeth_size_slider.setValue(int(preset.teeth_size * 2))
+        self._teeth_size_slider.blockSignals(False)
+        self._teeth_size_spin.blockSignals(True)
+        self._teeth_size_spin.setValue(preset.teeth_size)
+        self._teeth_size_spin.blockSignals(False)
+        self._teeth_opacity_slider.blockSignals(True)
+        self._teeth_opacity_slider.setValue(round(preset.teeth_opacity * 100))
+        self._teeth_opacity_slider.blockSignals(False)
+        self._teeth_opacity_spin.blockSignals(True)
+        self._teeth_opacity_spin.setValue(round(preset.teeth_opacity * 100))
+        self._teeth_opacity_spin.blockSignals(False)
 
         # Paint mode toggle
         pm_id = 0 if preset.paint_mode == "color" else 1

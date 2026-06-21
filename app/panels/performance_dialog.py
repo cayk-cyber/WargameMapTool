@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QRadioButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -24,6 +25,7 @@ class PerformanceDialog(QDialog):
 
     render_quality_changed = Signal(bool)    # True = quality mode
     sharp_lines_changed = Signal(bool)       # True = sharp line rendering
+    draw_quality_changed = Signal(bool)      # True = 4× mask resolution
     edge_bleed_quality_changed = Signal(bool)  # True = quality mode
     cache_delay_changed = Signal(int)        # delay in ms
     zoom_settle_changed = Signal(int)        # delay in ms
@@ -32,8 +34,8 @@ class PerformanceDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Performance Settings")
-        self.setMinimumSize(580, 420)
-        self.resize(620, 480)
+        self.setMinimumSize(580, 520)
+        self.resize(620, 580)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
@@ -57,9 +59,9 @@ class PerformanceDialog(QDialog):
         self._stack = QStackedWidget()
         body.addWidget(self._stack, stretch=1)
 
-        self._stack.addWidget(self._build_cache_delay_page())
-        self._stack.addWidget(self._build_render_quality_page())
-        self._stack.addWidget(self._build_visible_gfx_page())
+        self._stack.addWidget(self._scrollable(self._build_cache_delay_page()))
+        self._stack.addWidget(self._scrollable(self._build_render_quality_page()))
+        self._stack.addWidget(self._scrollable(self._build_visible_gfx_page()))
 
         # -- Buttons --
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -199,6 +201,39 @@ class PerformanceDialog(QDialog):
 
         layout.addWidget(sl_group)
 
+        # -- Draw Mask Quality --
+        dm_sc = self._shortcut_label("Ctrl+Shift+W")
+        layout.addWidget(dm_sc)
+
+        dm_group = QGroupBox("Draw Mask  (Draw Layer)")
+        dm_layout = QVBoxLayout(dm_group)
+
+        self._dm_perf = QRadioButton("Performance  (1\u00d7 World-Resolution Mask)")
+        self._dm_quality = QRadioButton("Quality  (2\u00d7 World-Resolution Mask)")
+
+        dm_desc_perf = QLabel("Faster, uses less memory. Brush strokes may\nlook blocky when zoomed in.")
+        dm_desc_perf.setStyleSheet("color: #888; margin-left: 20px; margin-bottom: 6px;")
+        dm_desc_qual = QLabel("Sharp brush strokes at all zoom levels.\nUses ~4\u00d7 more memory per channel mask.")
+        dm_desc_qual.setStyleSheet("color: #888; margin-left: 20px;")
+
+        dm_layout.addWidget(self._dm_perf)
+        dm_layout.addWidget(dm_desc_perf)
+        dm_layout.addWidget(self._dm_quality)
+        dm_layout.addWidget(dm_desc_qual)
+
+        dm_note = QLabel(
+            "Changing this rescales existing masks. New strokes\n"
+            "painted in Quality mode will be sharp; previously\n"
+            "painted strokes keep their original detail level."
+        )
+        dm_note.setWordWrap(True)
+        dm_note.setStyleSheet("color: #888; font-style: italic; margin-top: 6px;")
+        dm_layout.addWidget(dm_note)
+
+        self._dm_perf.toggled.connect(self._on_dm_toggled)
+
+        layout.addWidget(dm_group)
+
         # -- Edge Bleeding Quality --
         eb_sc = self._shortcut_label("Ctrl+Shift+B")
         layout.addWidget(eb_sc)
@@ -265,6 +300,15 @@ class PerformanceDialog(QDialog):
     # -----------------------------------------------------------------
 
     @staticmethod
+    def _scrollable(page: QWidget) -> QScrollArea:
+        """Wrap a page widget in a scroll area."""
+        sa = QScrollArea()
+        sa.setWidgetResizable(True)
+        sa.setFrameShape(QScrollArea.Shape.NoFrame)
+        sa.setWidget(page)
+        return sa
+
+    @staticmethod
     def _shortcut_label(shortcut: str) -> QLabel:
         lbl = QLabel(f"Shortcut:  {shortcut}")
         font = QFont()
@@ -314,6 +358,16 @@ class PerformanceDialog(QDialog):
         self._sl_cb.setChecked(sharp)
         self._sl_cb.blockSignals(False)
 
+    def set_draw_quality(self, quality: bool) -> None:
+        self._dm_quality.blockSignals(True)
+        self._dm_perf.blockSignals(True)
+        if quality:
+            self._dm_quality.setChecked(True)
+        else:
+            self._dm_perf.setChecked(True)
+        self._dm_quality.blockSignals(False)
+        self._dm_perf.blockSignals(False)
+
     def set_edge_bleed_quality(self, quality: bool) -> None:
         self._eb_quality.blockSignals(True)
         self._eb_perf.blockSignals(True)
@@ -351,6 +405,9 @@ class PerformanceDialog(QDialog):
 
     def _on_sl_toggled(self, checked: bool) -> None:
         self.sharp_lines_changed.emit(checked)
+
+    def _on_dm_toggled(self, perf_checked: bool) -> None:
+        self.draw_quality_changed.emit(not perf_checked)
 
     def _on_eb_toggled(self, perf_checked: bool) -> None:
         self.edge_bleed_quality_changed.emit(not perf_checked)

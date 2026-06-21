@@ -10,7 +10,7 @@ from app.commands.command import Command
 class CommandStack(QObject):
     stack_changed = Signal()
 
-    def __init__(self, max_size: int = 20):
+    def __init__(self, max_size: int = 30):
         super().__init__()
         self._undo_stack: list[Command] = []
         self._redo_stack: list[Command] = []

@@ -131,13 +131,17 @@ class BackgroundImageLayer(Layer):
         data["scale"] = self.scale
         data["clip_to_grid"] = self.clip_to_grid
 
-        # Save edited image if present
+        # Save edited image if present — must never silently lose pixel data
         if self._has_edits and self._qimage and not self._qimage.isNull():
             if self.project_dir:
                 edit_filename = f"{self.id}_bg_edit.png"
                 edit_path = os.path.join(self.project_dir, edit_filename)
-                self._qimage.save(edit_path, "PNG")
-                data["edited_image_path"] = edit_filename
+                if not self._qimage.save(edit_path, "PNG"):
+                    import logging
+                    logging.warning("Failed to save edited image: %s", edit_path)
+                else:
+                    data["edited_image_path"] = edit_filename
+                    self.edited_image_path = edit_filename
             elif self.edited_image_path:
                 data["edited_image_path"] = self.edited_image_path
 

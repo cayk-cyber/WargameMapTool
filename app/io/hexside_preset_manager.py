@@ -23,7 +23,6 @@ class HexsidePreset:
     outline_texture_id: str = ""
     outline_texture_zoom: float = 1.0
     outline_texture_rotation: float = 0.0
-    shift_enabled: bool = False
     shift: float = 0.0
     random: bool = False
     random_amplitude: float = 3.0
@@ -38,6 +37,13 @@ class HexsidePreset:
     texture_rotation: float = 0.0
     opacity: float = 1.0
     outline_opacity: float = 1.0
+    falloff_width: float = 20.0
+    falloff_amount: float = 1.0
+    falloff_random: float = 0.0
+    teeth_count: int = 4
+    teeth_size: float = 8.0
+    teeth_color: str = "#000000"
+    teeth_opacity: float = 1.0
 
     def serialize(self) -> dict:
         data = {
@@ -51,7 +57,6 @@ class HexsidePreset:
             "outline_texture_id": self.outline_texture_id,
             "outline_texture_zoom": self.outline_texture_zoom,
             "outline_texture_rotation": self.outline_texture_rotation,
-            "shift_enabled": self.shift_enabled,
             "shift": self.shift,
             "random": self.random,
             "random_amplitude": self.random_amplitude,
@@ -72,6 +77,15 @@ class HexsidePreset:
             data["opacity"] = self.opacity
         if self.outline_opacity != 1.0:
             data["outline_opacity"] = self.outline_opacity
+        data["falloff_width"] = self.falloff_width
+        data["falloff_amount"] = self.falloff_amount
+        if self.falloff_random > 0:
+            data["falloff_random"] = self.falloff_random
+        data["teeth_count"] = self.teeth_count
+        data["teeth_size"] = self.teeth_size
+        data["teeth_color"] = self.teeth_color
+        if self.teeth_opacity != 1.0:
+            data["teeth_opacity"] = self.teeth_opacity
         return data
 
     @classmethod
@@ -87,7 +101,6 @@ class HexsidePreset:
             outline_texture_id=data.get("outline_texture_id", ""),
             outline_texture_zoom=data.get("outline_texture_zoom", 1.0),
             outline_texture_rotation=data.get("outline_texture_rotation", 0.0),
-            shift_enabled=data.get("shift_enabled", False),
             shift=data.get("shift", 0.0),
             random=data.get("random", False),
             random_amplitude=data.get("random_amplitude", 3.0),
@@ -102,6 +115,13 @@ class HexsidePreset:
             texture_rotation=data.get("texture_rotation", 0.0),
             opacity=data.get("opacity", 1.0),
             outline_opacity=data.get("outline_opacity", 1.0),
+            falloff_width=data.get("falloff_width", 20.0),
+            falloff_amount=data.get("falloff_amount", 1.0),
+            falloff_random=data.get("falloff_random", 0.0),
+            teeth_count=data.get("teeth_count", 4),
+            teeth_size=data.get("teeth_size", 8.0),
+            teeth_color=data.get("teeth_color", "#000000"),
+            teeth_opacity=data.get("teeth_opacity", 1.0),
         )
 
 

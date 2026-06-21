@@ -1,15 +1,25 @@
+# Local asset folders (not for repo)
+assets/
+FACTORYASSETS/
+USERASSETS/
+TEXTURES/
+
+# Build output
+build/
+dist/
+*.spec
+
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
-.venv/
-venv/
-env/
-.env
-*.log
-.DS_Store
-Thumbs.db
+*.pyd
+
+# Claude memory
+.claude/
+
+# Local files
+Todo Map Tool.txt
+performance_optimization.md
+hotkeys.md
+PROJECT.md

@@ -171,10 +171,32 @@ class DrawOptions:
         self._expand_row_widget.setVisible(tool.mode == "fill")
         mode_gl.addWidget(self._expand_row_widget)
 
+        # Erase size controls (visible only in erase mode)
+        self._erase_size_container = QWidget()
+        erase_size_vl = QVBoxLayout(self._erase_size_container)
+        erase_size_vl.setContentsMargins(0, 4, 0, 0)
+        erase_size_vl.addWidget(QLabel("Size:"))
+        erase_slider_row = QHBoxLayout()
+        self._erase_size_slider = QSlider(Qt.Orientation.Horizontal)
+        self._erase_size_slider.setRange(1, 5000)
+        self._erase_size_slider.setValue(max(1, round(tool.brush_size * 10)))
+        self._erase_size_slider.valueChanged.connect(self._on_erase_size_slider)
+        erase_slider_row.addWidget(self._erase_size_slider, stretch=1)
+        self._erase_size_spin = QDoubleSpinBox()
+        self._erase_size_spin.setRange(0.1, 500.0)
+        self._erase_size_spin.setSingleStep(0.1)
+        self._erase_size_spin.setDecimals(1)
+        self._erase_size_spin.setValue(tool.brush_size)
+        self._erase_size_spin.valueChanged.connect(self._on_erase_size_spin)
+        erase_slider_row.addWidget(self._erase_size_spin)
+        erase_size_vl.addLayout(erase_slider_row)
+        self._erase_size_container.setVisible(tool.mode == "erase")
+        mode_gl.addWidget(self._erase_size_container)
+
         layout.addWidget(mode_group)
 
         # ===== Channels group =====
-        channels_group = QGroupBox("Channels")
+        self._channels_group = channels_group = QGroupBox("Channels")
         ch_gl = QVBoxLayout(channels_group)
         ch_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -222,7 +244,7 @@ class DrawOptions:
         layout.addWidget(channels_group)
 
         # ===== Brush group =====
-        brush_group = QGroupBox("Brush")
+        self._brush_group = brush_group = QGroupBox("Brush")
         brush_gl = QVBoxLayout(brush_group)
         brush_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -350,7 +372,7 @@ class DrawOptions:
         layout.addWidget(brush_group)
 
         # ===== Channel Content group (Color / Texture toggle) =====
-        ch_content_group = QGroupBox("Channel Content")
+        self._ch_content_group = ch_content_group = QGroupBox("Channel Content")
         ch_content_gl = QVBoxLayout(ch_content_group)
         ch_content_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -618,7 +640,7 @@ class DrawOptions:
         layout.addWidget(self._edge_group)
 
         # ===== Outline group (layer-level) =====
-        outline_group = QGroupBox("Outline")
+        self._outline_group = outline_group = QGroupBox("Outline")
         outline_gl = QVBoxLayout(outline_group)
         outline_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -672,7 +694,7 @@ class DrawOptions:
         layout.addWidget(outline_group)
 
         # ===== Shadow group (layer-level) =====
-        shadow_group = QGroupBox("Shadow")
+        self._shadow_group = shadow_group = QGroupBox("Shadow")
         shadow_gl = QVBoxLayout(shadow_group)
         shadow_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -807,7 +829,7 @@ class DrawOptions:
         layout.addWidget(shadow_group)
 
         # ===== Bevel & Emboss group (includes Structure sub-section) =====
-        bevel_group = QGroupBox("Bevel && Emboss")
+        self._bevel_group = bevel_group = QGroupBox("Bevel && Emboss")
         bevel_gl = QVBoxLayout(bevel_group)
         bevel_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -1030,10 +1052,16 @@ class DrawOptions:
         # Register callback so sliders stay in sync during drag-to-adjust.
         tool._params_changed_cb = self._sync_brush_params_from_tool
 
+        # Register callback so UI syncs when mode changes via E key.
+        tool._mode_changed_cb = self._on_erase_mode_from_tool
+
         # Connect command stack signal so channel UI refreshes after Ctrl+Z
         # of a DrawEditChannelCommand (e.g. rename, color change).
         tool._command_stack.stack_changed.connect(self._on_stack_changed)
         self._stack_connected = True
+
+        # Apply initial erase-mode visibility
+        self._apply_erase_visibility(tool.mode)
 
         return widget
 
@@ -1787,11 +1815,69 @@ class DrawOptions:
         mode = {0: "draw", 1: "fill", 2: "erase"}.get(btn_id, "draw")
         self._tool.mode = mode
         self._expand_row_widget.setVisible(mode == "fill")
+        self._apply_erase_visibility(mode)
+        self.dock._tool_manager.notify_cursor_changed()
+
+    def _on_erase_mode_from_tool(self) -> None:
+        """Sync UI when mode changes via E key in the tool."""
+        if not self._tool:
+            return
+        mode = self._tool.mode
+        btn_id = {"draw": 0, "fill": 1, "erase": 2}.get(mode, 0)
+        self._de_group.blockSignals(True)
+        btn = self._de_group.button(btn_id)
+        if btn:
+            btn.setChecked(True)
+        self._de_group.blockSignals(False)
+        self._expand_row_widget.setVisible(mode == "fill")
+        self._apply_erase_visibility(mode)
+        self.dock._tool_manager.notify_cursor_changed()
+
+    def _apply_erase_visibility(self, mode: str) -> None:
+        """Show/hide groups based on erase mode."""
+        is_erase = mode == "erase"
+        self._erase_size_container.setVisible(is_erase)
+        # Sync erase size slider from tool brush_size
+        if is_erase and self._tool:
+            self._erase_size_slider.blockSignals(True)
+            self._erase_size_spin.blockSignals(True)
+            self._erase_size_slider.setValue(max(1, round(self._tool.brush_size * 10)))
+            self._erase_size_spin.setValue(self._tool.brush_size)
+            self._erase_size_slider.blockSignals(False)
+            self._erase_size_spin.blockSignals(False)
+        # Hide all groups except Mode in erase mode
+        for grp in (
+            self._channels_group,
+            self._brush_group,
+            self._ch_content_group,
+            self._color_group,
+            self._texture_group,
+            self._edge_group,
+            self._outline_group,
+            self._shadow_group,
+            self._bevel_group,
+        ):
+            grp.setVisible(not is_erase)
 
     def _on_fill_expand_changed(self, v: int) -> None:
         self._fill_expand_lbl.setText(f"{v} px")
         if self._tool:
             self._tool.fill_expand_px = v
+
+    def _on_erase_size_slider(self, v: int) -> None:
+        val = v / 10.0
+        self._erase_size_spin.blockSignals(True)
+        self._erase_size_spin.setValue(val)
+        self._erase_size_spin.blockSignals(False)
+        if self._tool:
+            self._tool.brush_size = val
+
+    def _on_erase_size_spin(self, v: float) -> None:
+        self._erase_size_slider.blockSignals(True)
+        self._erase_size_slider.setValue(max(1, round(v * 10)))
+        self._erase_size_slider.blockSignals(False)
+        if self._tool:
+            self._tool.brush_size = v
 
     # -------------------------------------------------------------------------
     # Brush
@@ -2115,6 +2201,15 @@ class DrawOptions:
         self._flow_spin.setValue(self._tool.flow)
         self._flow_slider.blockSignals(False)
         self._flow_spin.blockSignals(False)
+
+        # Also sync erase size slider when in erase mode
+        if self._tool.mode == "erase":
+            self._erase_size_slider.blockSignals(True)
+            self._erase_size_spin.blockSignals(True)
+            self._erase_size_slider.setValue(max(1, min(5000, round(self._tool.brush_size * 10))))
+            self._erase_size_spin.setValue(self._tool.brush_size)
+            self._erase_size_slider.blockSignals(False)
+            self._erase_size_spin.blockSignals(False)
 
     # -------------------------------------------------------------------------
     # Color (active channel)

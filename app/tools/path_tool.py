@@ -79,6 +79,7 @@ class PathTool(Tool):
         self._project = project
         self._command_stack = command_stack
         self.mode: str = "place"  # "place" or "select"
+        self.draw_on_bottom: bool = False
 
         # Placement settings
         self.color: str = "#000000"
@@ -272,7 +273,7 @@ class PathTool(Tool):
                 obj.ep_b = list(existing.ep_b)
                 break
 
-        cmd = PlacePathCommand(layer, obj)
+        cmd = PlacePathCommand(layer, obj, bottom=self.draw_on_bottom)
         cmd.execute()
         if self._drag_command:
             self._drag_command._commands.append(cmd)

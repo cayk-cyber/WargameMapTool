@@ -187,7 +187,13 @@ class HexGridConfig:
         return result
 
     def get_half_hex_bounds(self) -> QRectF:
-        """Clip bounds for half-hex mode (cached)."""
+        """Clip bounds for half-hex mode (cached).
+
+        For tileable maps the bounds must be symmetric: the stagger offset
+        that already clips half-hexes at the top must also be removed from
+        the bottom (flat-top) or right (pointy-top) edge so tiles join
+        seamlessly.
+        """
         key = self._bounds_key()
         if self._bounds_cache_key == key and self._cached_half_hex_bounds is not None:
             return self._cached_half_hex_bounds
@@ -202,6 +208,14 @@ class HexGridConfig:
             max_cx = max(c[0] for c in centers)
             min_cy = min(c[1] for c in centers)
             max_cy = max(c[1] for c in centers)
+
+            # Remove the stagger offset so tiles join seamlessly.
+            stagger = math.sqrt(3) / 2 * self.hex_size
+            if self.orientation == "flat" and self.width > 1 and self.height > 1:
+                max_cy -= stagger
+            elif self.orientation == "pointy" and self.height > 1 and self.width > 1:
+                max_cx -= stagger
+
             result = QRectF(min_cx, min_cy, max_cx - min_cx, max_cy - min_cy)
 
         self._bounds_cache_key = key

@@ -102,12 +102,12 @@ class AssetOptions:
         erase_size_vl.addWidget(QLabel("Size:"))
         erase_slider_row = QHBoxLayout()
         self._erase_size_slider = QSlider(Qt.Orientation.Horizontal)
-        self._erase_size_slider.setRange(5, 300)
+        self._erase_size_slider.setRange(1, 300)
         self._erase_size_slider.setValue(int(tool.erase_brush_size))
         self._erase_size_slider.valueChanged.connect(self._on_erase_size_slider)
         erase_slider_row.addWidget(self._erase_size_slider, stretch=1)
         self._erase_size_spin = QSpinBox()
-        self._erase_size_spin.setRange(5, 300)
+        self._erase_size_spin.setRange(1, 300)
         self._erase_size_spin.setValue(int(tool.erase_brush_size))
         self._erase_size_spin.setSuffix("px")
         self._erase_size_spin.setFixedWidth(70)
@@ -120,7 +120,7 @@ class AssetOptions:
         layout.addWidget(mode_group)
 
         # ===== Browser group =====
-        browser_group = QGroupBox("Assets")
+        self._browser_group = browser_group = QGroupBox("Assets")
         browser_gl = QVBoxLayout(browser_group)
         browser_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -172,7 +172,7 @@ class AssetOptions:
         layout.addWidget(browser_group)
 
         # ===== Placement group =====
-        placement_group = QGroupBox("Placement")
+        self._placement_group = placement_group = QGroupBox("Placement")
         placement_gl = QVBoxLayout(placement_group)
         placement_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -307,7 +307,7 @@ class AssetOptions:
         layout.addWidget(placement_group)
 
         # ===== Scale group =====
-        scale_group = QGroupBox("Scale")
+        self._scale_group = scale_group = QGroupBox("Scale")
         scale_gl = QVBoxLayout(scale_group)
         scale_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -381,7 +381,7 @@ class AssetOptions:
         layout.addWidget(scale_group)
 
         # ===== Rotation group =====
-        rotation_group = QGroupBox("Rotation")
+        self._rotation_group = rotation_group = QGroupBox("Rotation")
         rotation_gl = QVBoxLayout(rotation_group)
         rotation_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -439,7 +439,7 @@ class AssetOptions:
         layout.addWidget(rotation_group)
 
         # ===== Shadow group (layer-level) =====
-        shadow_group = QGroupBox("Shadow")
+        self._shadow_group = shadow_group = QGroupBox("Shadow")
         shadow_gl = QVBoxLayout(shadow_group)
         shadow_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -586,7 +586,7 @@ class AssetOptions:
         layout.addWidget(eraser_group)
 
         # ===== Auto-Text group =====
-        auto_text_group = QGroupBox("Auto-Text")
+        self._auto_text_group = auto_text_group = QGroupBox("Auto-Text")
         auto_text_gl = QVBoxLayout(auto_text_group)
         auto_text_gl.setContentsMargins(6, 4, 6, 4)
 
@@ -658,10 +658,23 @@ class AssetOptions:
             self._asset_tool.mode = "erase"
             self._asset_tool._selected_asset = None
             self._asset_tool._notify_selection()
-        self._erase_size_container.setVisible(button_id == 2)
-        self._eraser_group.setEnabled(button_id == 2)
+        is_erase = button_id == 2
+        self._erase_size_container.setVisible(is_erase)
+        self._eraser_group.setEnabled(is_erase)
+        self.dock._tool_manager.notify_cursor_changed()
+        # Hide all groups except Mode and Eraser in erase mode
+        for grp in (
+            self._browser_group,
+            self._placement_group,
+            self._scale_group,
+            self._rotation_group,
+            self._shadow_group,
+            self._auto_text_group,
+        ):
+            grp.setVisible(not is_erase)
+        self._eraser_group.setVisible(is_erase)
         # Free overlay cache memory when leaving erase mode
-        if button_id != 2:
+        if not is_erase:
             self._asset_tool._mask_overlay_image = None
             self._asset_tool._mask_overlay_version = -1
 
@@ -1068,6 +1081,7 @@ class AssetOptions:
 
         if asset.exists():
             self._asset_tool.set_pending_image(asset.file_path())
+            self.dock._tool_manager.notify_cursor_changed()
 
         # Sync sidebar selection
         if self._sidebar and self._sidebar.isVisible():

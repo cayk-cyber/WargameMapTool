@@ -10,12 +10,13 @@ from app.models.path_object import PathObject
 
 
 class PlacePathCommand(Command):
-    def __init__(self, layer: PathLayer, obj: PathObject):
+    def __init__(self, layer: PathLayer, obj: PathObject, bottom: bool = False):
         self._layer = layer
         self._obj = obj
+        self._bottom = bottom
 
     def execute(self) -> None:
-        self._layer.add_path(self._obj)
+        self._layer.add_path(self._obj, bottom=self._bottom)
 
     def undo(self) -> None:
         self._layer.remove_path(self._obj)

@@ -124,6 +124,7 @@ class PathOptions:
         mode_btn_layout.addWidget(select_btn)
         mode_btn_layout.addStretch()
         mode_gl.addLayout(mode_btn_layout)
+
         layout.addWidget(mode_group)
 
         # ===== Presets group =====
@@ -402,6 +403,14 @@ class PathOptions:
         self._pt_opacity_spin.valueChanged.connect(self._on_opacity_spin)
         opacity_row.addWidget(self._pt_opacity_spin)
         main_gl.addLayout(opacity_row)
+
+        self._pt_draw_bottom_cb = QCheckBox("Draw on Bottom")
+        self._pt_draw_bottom_cb.setToolTip(
+            "New paths are drawn below existing paths instead of on top"
+        )
+        self._pt_draw_bottom_cb.setChecked(tool.draw_on_bottom)
+        self._pt_draw_bottom_cb.toggled.connect(self._on_draw_bottom_toggled)
+        main_gl.addWidget(self._pt_draw_bottom_cb)
 
         # Type
         lt_row = QHBoxLayout()
@@ -1294,6 +1303,11 @@ class PathOptions:
             self._path_tool._interaction = None
             if button_id == 0:
                 self._path_tool._notify_selection()
+            self.dock._tool_manager.notify_cursor_changed()
+
+    def _on_draw_bottom_toggled(self, checked: bool) -> None:
+        if self._path_tool:
+            self._path_tool.draw_on_bottom = checked
 
     # --- Color ---
 

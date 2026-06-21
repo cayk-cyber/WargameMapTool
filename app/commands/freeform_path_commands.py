@@ -10,12 +10,13 @@ from app.models.freeform_path_object import FreeformPathObject
 
 
 class PlaceFreeformPathCommand(Command):
-    def __init__(self, layer: FreeformPathLayer, obj: FreeformPathObject):
+    def __init__(self, layer: FreeformPathLayer, obj: FreeformPathObject, bottom: bool = False):
         self._layer = layer
         self._obj = obj
+        self._bottom = bottom
 
     def execute(self) -> None:
-        self._layer.add_path(self._obj)
+        self._layer.add_path(self._obj, bottom=self._bottom)
 
     def undo(self) -> None:
         self._layer.remove_path(self._obj)

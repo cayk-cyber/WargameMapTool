@@ -75,6 +75,8 @@ class DrawTool(Tool):
         # Callback invoked when brush params change via drag.
         # Set by the tool options panel to keep sliders in sync.
         self._params_changed_cb = None
+        # Callback invoked when mode changes via E key.
+        self._mode_changed_cb = None
 
         # Shift+click straight-line state (Photoshop-style).
         # _last_stroke_end: world position of the last painted point.
@@ -158,13 +160,7 @@ class DrawTool(Tool):
 
     def _get_map_bounds(self) -> QRectF:
         """Return world-space bounding rect of the full hex map."""
-        if self._layout is not None:
-            try:
-                return self._layout.map_bounding_rect()
-            except Exception:
-                pass
-        # Fallback: generous bounds covering any reasonable map
-        return QRectF(-200, -200, 5000, 4000)
+        return self._project.grid_config.get_map_pixel_bounds()
 
     def _paint_stamp(self, channel: DrawChannel, wx: float, wy: float) -> QRectF:
         """Paint one brush stamp at world position (wx, wy).
@@ -564,6 +560,8 @@ class DrawTool(Tool):
             else:
                 self._pre_erase_mode = self.mode
                 self.mode = "erase"
+            if self._mode_changed_cb is not None:
+                self._mode_changed_cb()
 
     # -------------------------------------------------------------------------
     # Overlay
@@ -591,21 +589,27 @@ class DrawTool(Tool):
             radius = self.brush_size / 2.0
 
             if self.mode == "erase":
-                inner_color = QColor(255, 80, 80, 230)
+                # Dashed circle matching Asset Tool erase cursor
+                pen = QPen(QColor(255, 80, 80), 1.5)
+                pen.setCosmetic(True)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.save()
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawEllipse(QPointF(mx, my), radius, radius)
+                painter.restore()
             else:
-                inner_color = QColor(255, 255, 255, 230)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
 
-            painter.setBrush(Qt.BrushStyle.NoBrush)
+                pen_outer = QPen(QColor(0, 0, 0, 160), 3.0 * inv_scale)
+                pen_outer.setStyle(Qt.PenStyle.SolidLine)
+                painter.setPen(pen_outer)
+                painter.drawEllipse(QPointF(mx, my), radius, radius)
 
-            pen_outer = QPen(QColor(0, 0, 0, 160), 3.0 * inv_scale)
-            pen_outer.setStyle(Qt.PenStyle.SolidLine)
-            painter.setPen(pen_outer)
-            painter.drawEllipse(QPointF(mx, my), radius, radius)
-
-            pen_inner = QPen(inner_color, 1.5 * inv_scale)
-            pen_inner.setStyle(Qt.PenStyle.SolidLine)
-            painter.setPen(pen_inner)
-            painter.drawEllipse(QPointF(mx, my), radius, radius)
+                pen_inner = QPen(QColor(255, 255, 255, 230), 1.5 * inv_scale)
+                pen_inner.setStyle(Qt.PenStyle.SolidLine)
+                painter.setPen(pen_inner)
+                painter.drawEllipse(QPointF(mx, my), radius, radius)
 
         # Shift+click preview: dashed line from last stroke end to cursor.
         if (

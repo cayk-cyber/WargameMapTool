@@ -76,6 +76,7 @@ class FreeformPathTool(Tool):
         self._project = project
         self._command_stack = command_stack
         self.mode: str = "draw"  # "draw" or "select"
+        self.draw_on_bottom: bool = False
 
         # Drawing settings
         self.smoothness: float = 0.5
@@ -322,7 +323,7 @@ class FreeformPathTool(Tool):
                     bg_opacity=self.bg_opacity,
                 )
 
-                cmd = PlaceFreeformPathCommand(layer, obj)
+                cmd = PlaceFreeformPathCommand(layer, obj, bottom=self.draw_on_bottom)
                 self._command_stack.execute(cmd)
                 self._current_points.clear()
 
@@ -405,7 +406,7 @@ class FreeformPathTool(Tool):
             opacity=self.opacity,
             bg_opacity=self.bg_opacity,
         )
-        cmd = PlaceFreeformPathCommand(layer, obj)
+        cmd = PlaceFreeformPathCommand(layer, obj, bottom=self.draw_on_bottom)
         self._command_stack.execute(cmd)
 
     # --- Overlay rendering ---

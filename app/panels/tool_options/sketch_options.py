@@ -951,6 +951,7 @@ class SketchOptions:
         self._tool._selected = None
         self._tool._interaction = None
         self._tool._notify_selection()
+        self.dock._tool_manager.notify_cursor_changed()
 
     def _on_over_grid_changed(self, checked: bool) -> None:
         if not self._tool:

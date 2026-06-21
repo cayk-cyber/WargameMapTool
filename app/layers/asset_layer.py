@@ -187,6 +187,40 @@ class AssetLayer(Layer):
         self.mask_image = QImage(w, h, QImage.Format.Format_ARGB32)
         self.mask_image.fill(QColor(255, 255, 255, 255))
 
+    def resize_mask(self, new_world_rect: QRectF) -> None:
+        """Resize erase mask to cover a new world rect, preserving erased areas."""
+        if self.mask_image is None:
+            return
+        old_mask = self.mask_image
+        old_offset = self._mask_world_offset
+        old_scale = self._mask_world_scale
+
+        w_raw = max(1, math.ceil(new_world_rect.width()))
+        h_raw = max(1, math.ceil(new_world_rect.height()))
+        scale = 1.0
+        if w_raw > _MAX_MASK_DIM or h_raw > _MAX_MASK_DIM:
+            scale = min(_MAX_MASK_DIM / w_raw, _MAX_MASK_DIM / h_raw)
+        w = max(1, int(w_raw * scale))
+        h = max(1, int(h_raw * scale))
+
+        new_mask = QImage(w, h, QImage.Format.Format_ARGB32)
+        new_mask.fill(QColor(255, 255, 255, 255))  # white = visible
+
+        # Composite old mask content at correct position
+        p = QPainter(new_mask)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        ox = (old_offset[0] - new_world_rect.x()) * scale
+        oy = (old_offset[1] - new_world_rect.y()) * scale
+        sx = scale / old_scale
+        p.translate(ox, oy)
+        p.scale(sx, sx)
+        p.drawImage(QPointF(0, 0), old_mask)
+        p.end()
+
+        self.mask_image = new_mask
+        self._mask_world_offset = (new_world_rect.x(), new_world_rect.y())
+        self._mask_world_scale = scale
+
     def clear_mask(self) -> None:
         """Remove the erase mask (restore all assets to fully visible)."""
         self.mask_image = None

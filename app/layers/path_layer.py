@@ -90,8 +90,11 @@ class PathLayer(Layer):
         self.shadow_spread: float = 0.0
         self.shadow_size: float = 5.0
 
-    def add_path(self, obj: PathObject) -> None:
-        self.paths[obj.edge_key()] = obj
+    def add_path(self, obj: PathObject, bottom: bool = False) -> None:
+        if bottom:
+            self.paths = {obj.edge_key(): obj, **self.paths}
+        else:
+            self.paths[obj.edge_key()] = obj
         self.mark_dirty()
 
     def remove_path(self, obj: PathObject) -> None:

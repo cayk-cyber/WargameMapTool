@@ -168,7 +168,6 @@ class RandomMapCommand(Command):
                 outline_texture_id=p.outline_texture_id,
                 outline_texture_zoom=p.outline_texture_zoom,
                 outline_texture_rotation=p.outline_texture_rotation,
-                shift_enabled=p.shift_enabled,
                 shift=p.shift,
                 random=p.random,
                 random_amplitude=p.random_amplitude,
@@ -183,6 +182,9 @@ class RandomMapCommand(Command):
                 texture_rotation=p.texture_rotation,
                 opacity=p.opacity,
                 outline_opacity=p.outline_opacity,
+                falloff_width=p.falloff_width,
+                falloff_amount=p.falloff_amount,
+                falloff_random=p.falloff_random,
             )
         else:
             # Default blue river style

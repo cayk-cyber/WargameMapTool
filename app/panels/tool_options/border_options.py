@@ -608,6 +608,7 @@ class BorderOptions:
             self._border_tool.mode = "place" if button_id == 0 else "select"
             self._border_tool._selected = None
             self._border_tool._notify_selection()
+            self.dock._tool_manager.notify_cursor_changed()
 
     # --- Color ---
 

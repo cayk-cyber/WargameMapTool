@@ -517,6 +517,7 @@ class TextOptions:
             self._text_tool._notify_selection()
         else:
             self._text_tool.mode = "select"
+        self.dock._tool_manager.notify_cursor_changed()
 
     # --- Selection sync ---
 
@@ -1019,7 +1020,12 @@ class TextOptions:
 
     def _on_text_over_grid_changed(self, checked: bool) -> None:
         self._text_tool.over_grid = checked
-        self._apply_to_selected(over_grid=checked)
+        # Apply to ALL objects in the layer (not just selected)
+        layer = self._text_tool._get_active_text_layer()
+        if layer and layer.objects:
+            from app.commands.text_commands import SetAllTextOverGridCommand
+            cmd = SetAllTextOverGridCommand(layer, checked)
+            self._text_tool._command_stack.execute(cmd)
 
     # --- Shadow (layer-level) ---
 

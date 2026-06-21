@@ -60,16 +60,22 @@ def _paint_map(
     # regardless of the live performance toggles.
     import app.layers.draw_layer as _dl
     import app.layers.fill_layer as _fl
+    import app.models.draw_object as _do
 
     prev_gfx = Layer._gfx_effects_enabled
     prev_eb = _dl._edge_bleed_quality
     prev_fq = _fl._quality_mode
     prev_sl = Layer._sharp_lines
+    prev_dq = _do._draw_quality_scale
 
     Layer._gfx_effects_enabled = True
     _dl.set_edge_bleed_quality_mode(True)
     _fl.set_fill_quality_mode(True)
     Layer._sharp_lines = True
+    # Note: draw quality scale is NOT forced during export because rescaling
+    # masks is destructive (bilinear upscale).  The mask data is rendered
+    # at whatever resolution it was painted at — the composite pipeline
+    # already upscales to the export resolution via QPainter transforms.
     try:
         _paint_map_impl(painter, project, bounds, config, single_layer_id)
     finally:

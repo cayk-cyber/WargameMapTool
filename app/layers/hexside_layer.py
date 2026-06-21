@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import math
 import random as _random
+from collections import defaultdict
 
+import numpy as np
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import (
-    QBrush, QColor, QPainter, QPainterPath, QPainterPathStroker,
-    QPen, QPixmap, QTransform, Qt,
+    QBrush, QColor, QImage, QLinearGradient, QPainter, QPainterPath,
+    QPainterPathStroker, QPen, QPixmap, QTransform, Qt,
 )
 
 from app.io.texture_cache import get_texture_image
@@ -51,8 +53,9 @@ class HexsideLayer(Layer):
 
     @property
     def cacheable(self) -> bool:
-        """Sharp lines mode: screen-res cache. Default: world-res cache."""
-        return not Layer._sharp_lines
+        """Screen-res cache when sharp lines or texture quality is on."""
+        from app.layers import fill_layer as _fl
+        return not Layer._sharp_lines and not _fl._quality_mode
 
     def __init__(self, name: str = "Hexside"):
         super().__init__(name)
@@ -227,8 +230,11 @@ class HexsideLayer(Layer):
                 te = vertex_counts.get(k2, 0) <= 1
                 taper_info[obj.edge_key()] = (ts, te, obj.taper_length)
 
-        # Two-pass rendering: outlines first, then main lines.
-        # This prevents one hexside's outline from covering another's main line.
+        # Three-pass rendering: falloff bands, outlines, main lines.
+
+        # Pass 0: All falloff bands (below outlines and main lines)
+        # Group by target hex so overlapping bands don't darken additively.
+        self._paint_all_falloffs(painter, layout, visible)
 
         # Pass 1: All outlines
         for obj, path in visible:
@@ -269,6 +275,76 @@ class HexsideLayer(Layer):
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawPath(path)
+            painter.restore()
+
+        # Pass 3: All teeth decorators (on top of lines)
+        self._paint_all_teeth(painter, layout, visible)
+
+    def _paint_all_teeth(
+        self, painter: QPainter, layout: Layout,
+        visible: list[tuple],
+    ) -> None:
+        """Draw triangular teeth decorators along hexside paths."""
+        for obj, path in visible:
+            if not obj.teeth_side:
+                continue
+
+            count = max(1, obj.teeth_count)
+            side_len = obj.teeth_size
+            half_base = side_len * 0.5        # equilateral: base = side length
+            height = side_len * 0.8660254     # sqrt(3)/2 ≈ 0.866
+
+            # Get edge normal (from hex_a toward hex_b)
+            nx, ny = self._get_edge_normal(layout, obj.hex_a(), obj.hex_b())
+
+            painter.save()
+            if obj.teeth_opacity < 1.0:
+                painter.setOpacity(obj.teeth_opacity)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(obj.teeth_color))
+
+            for i in range(count):
+                t = (i + 0.5) / count
+                pt = path.pointAtPercent(t)
+
+                # Tangent via finite difference
+                dt = 0.01
+                t1 = max(0.0, t - dt)
+                t2 = min(1.0, t + dt)
+                p1 = path.pointAtPercent(t1)
+                p2 = path.pointAtPercent(t2)
+                tang_x = p2.x() - p1.x()
+                tang_y = p2.y() - p1.y()
+                tang_len = math.hypot(tang_x, tang_y)
+                if tang_len < 1e-9:
+                    continue
+                tang_x /= tang_len
+                tang_y /= tang_len
+
+                # Perpendicular: orient toward hex_b by default
+                perp_x, perp_y = -tang_y, tang_x
+                dot = perp_x * nx + perp_y * ny
+                if dot < 0:
+                    perp_x, perp_y = -perp_x, -perp_y
+                # Flip if teeth point toward hex_a
+                if obj.teeth_side == "a":
+                    perp_x, perp_y = -perp_x, -perp_y
+
+                # Equilateral triangle vertices
+                bx1 = pt.x() - tang_x * half_base
+                by1 = pt.y() - tang_y * half_base
+                bx2 = pt.x() + tang_x * half_base
+                by2 = pt.y() + tang_y * half_base
+                ax = pt.x() + perp_x * height
+                ay = pt.y() + perp_y * height
+
+                tri = QPainterPath()
+                tri.moveTo(bx1, by1)
+                tri.lineTo(bx2, by2)
+                tri.lineTo(ax, ay)
+                tri.closeSubpath()
+                painter.drawPath(tri)
+
             painter.restore()
 
     def _paint_outline(
@@ -370,10 +446,10 @@ class HexsideLayer(Layer):
         """Compute the signed shift value with auto-direction detection.
 
         Positive = toward hex_b, negative = toward hex_a.
-        If shift_enabled, auto-detects which adjacent hex has a matching
-        fill color/texture and shifts AWAY from it.
+        Auto-detects which adjacent hex has a matching fill color/texture
+        and shifts AWAY from it.
         """
-        if not obj.shift_enabled or obj.shift == 0.0:
+        if obj.shift == 0.0:
             return 0.0
 
         ha = (obj.hex_a_q, obj.hex_a_r)
@@ -395,6 +471,430 @@ class HexsideLayer(Layer):
                 return obj.shift  # Away from hex_a
 
         return 0.0  # No matching neighbor
+
+    def _paint_all_falloffs(
+        self, painter: QPainter, layout: Layout,
+        visible: list[tuple[HexsideObject, QPainterPath]],
+    ) -> None:
+        """Render all falloff bands with true per-pixel max alpha.
+
+        Uses a screen-resolution off-screen buffer (like _paint_stipples)
+        with an opaque-black background + Lighten mode to compute
+        max(grayscale) per pixel.  One numpy pass converts brightness
+        to premultiplied ARGB with the fill color.
+
+        This avoids the Porter-Duff alpha accumulation that makes
+        overlapping semi-transparent bands darker.
+        """
+        # Collect bands, grouped by source fill color
+        color_groups: dict[str, list[tuple[QPainterPath, QLinearGradient, float]]] = (
+            defaultdict(list)
+        )
+        tex_bands: list[tuple[QPainterPath, QLinearGradient, float, object]] = []
+        world_bounds = QRectF()
+
+        for obj, path in visible:
+            if not obj.falloff_side or obj.falloff_width <= 0:
+                continue
+
+            if obj.falloff_side == "a":
+                source_key = (obj.hex_b_q, obj.hex_b_r)
+            else:
+                source_key = (obj.hex_a_q, obj.hex_a_r)
+
+            fill_color = self._fill_colors.get(source_key)
+            fill_tex = self._fill_textures.get(source_key)
+            if fill_color is None and fill_tex is None:
+                continue
+
+            result = self._build_falloff_shape(layout, obj, path)
+            if result is None:
+                continue
+            strip_path, gradient, solid_end = result
+
+            if fill_tex:
+                tex_bands.append((strip_path, gradient, solid_end, fill_tex))
+            elif fill_color:
+                color_groups[fill_color].append((strip_path, gradient, solid_end))
+
+            if world_bounds.isNull():
+                world_bounds = strip_path.boundingRect()
+            else:
+                world_bounds = world_bounds.united(strip_path.boundingRect())
+
+        if not color_groups and not tex_bands:
+            return
+
+        # Compute screen-pixel buffer size from painter's world transform
+        wb = world_bounds.adjusted(-4, -4, 4, 4)
+        xform = painter.transform()
+        sx = xform.m11() if abs(xform.m11()) > 0.001 else 1.0
+        sy = xform.m22() if abs(xform.m22()) > 0.001 else 1.0
+
+        dev_l = wb.left() * sx + xform.dx()
+        dev_t = wb.top() * sy + xform.dy()
+        dev_r = wb.right() * sx + xform.dx()
+        dev_b = wb.bottom() * sy + xform.dy()
+        buf_x = int(min(dev_l, dev_r)) - 1
+        buf_y = int(min(dev_t, dev_b)) - 1
+        buf_w = int(abs(dev_r - dev_l)) + 3
+        buf_h = int(abs(dev_b - dev_t)) + 3
+
+        if buf_w <= 0 or buf_h <= 0 or buf_w * buf_h > 25_000_000:
+            return
+
+        # --- Color bands: per-group opaque-black Lighten + numpy ---
+        for fill_color, bands in color_groups.items():
+            self._paint_color_falloff_group(
+                painter, fill_color, bands,
+                xform, sx, sy, buf_x, buf_y, buf_w, buf_h,
+            )
+
+        # --- Texture bands: per-band buffer + numpy max ---
+        if tex_bands:
+            self._paint_texture_falloff_bands(
+                painter, tex_bands,
+                xform, sx, sy, buf_x, buf_y, buf_w, buf_h,
+            )
+
+    def _paint_color_falloff_group(
+        self,
+        painter: QPainter,
+        fill_color: str,
+        bands: list[tuple[QPainterPath, QLinearGradient, float]],
+        xform: QTransform,
+        sx: float,
+        sy: float,
+        buf_x: int,
+        buf_y: int,
+        buf_w: int,
+        buf_h: int,
+    ) -> None:
+        """Render same-color falloff bands with true max-alpha compositing.
+
+        Uses bounding-rect optimisation: each band is rendered into a
+        small QImage covering only its screen-space bounding box, then
+        accumulated via numpy per-pixel maximum.  This reduces memory
+        throughput by ~500-1000x compared to full-buffer per band.
+        """
+        source_color = QColor(fill_color)
+        transparent = QColor(source_color)
+        transparent.setAlpha(0)
+
+        combined = np.zeros((buf_h, buf_w, 4), dtype=np.uint8)
+
+        for strip_path, gradient, solid_end in bands:
+            # Compute screen-pixel bounding rect of this band
+            br = strip_path.boundingRect()
+            bx1 = int(br.left() * sx + xform.dx() - buf_x) - 1
+            by1 = int(br.top() * sy + xform.dy() - buf_y) - 1
+            bx2 = int(br.right() * sx + xform.dx() - buf_x) + 2
+            by2 = int(br.bottom() * sy + xform.dy() - buf_y) + 2
+            bx1 = max(0, bx1)
+            by1 = max(0, by1)
+            bx2 = min(buf_w, bx2)
+            by2 = min(buf_h, by2)
+            bw = bx2 - bx1
+            bh = by2 - by1
+            if bw <= 0 or bh <= 0:
+                continue
+
+            band_img = QImage(
+                bw, bh, QImage.Format.Format_ARGB32_Premultiplied,
+            )
+            if band_img.isNull():
+                continue
+            band_img.fill(Qt.GlobalColor.transparent)
+
+            bp = QPainter(band_img)
+            bp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            bp.setPen(Qt.PenStyle.NoPen)
+            bp.translate(
+                xform.dx() - buf_x - bx1,
+                xform.dy() - buf_y - by1)
+            bp.scale(sx, sy)
+
+            gradient.setColorAt(0.0, source_color)
+            if solid_end > 0.01:
+                gradient.setColorAt(solid_end, source_color)
+            gradient.setColorAt(1.0, transparent)
+            bp.setBrush(QBrush(gradient))
+            bp.drawPath(strip_path)
+            bp.end()
+
+            # Per-pixel max into accumulator at the correct offset
+            stride = band_img.bytesPerLine()
+            raw = np.frombuffer(band_img.constBits(), dtype=np.uint8)
+            if stride == bw * 4:
+                arr = raw.reshape(bh, bw, 4)
+            else:
+                arr = raw.reshape(bh, stride)[:, :bw * 4].reshape(
+                    bh, bw, 4,
+                )
+            region = combined[by1:by2, bx1:bx2]
+            np.maximum(region, arr, out=region)
+
+        if not combined.any():
+            return
+
+        result_data = combined.tobytes()
+        result_img = QImage(
+            result_data, buf_w, buf_h, buf_w * 4,
+            QImage.Format.Format_ARGB32_Premultiplied,
+        )
+        painter.save()
+        painter.resetTransform()
+        painter.drawImage(buf_x, buf_y, result_img)
+        painter.restore()
+
+    def _paint_texture_falloff_bands(
+        self,
+        painter: QPainter,
+        tex_bands: list[tuple[QPainterPath, QLinearGradient, float, object]],
+        xform: QTransform,
+        sx: float,
+        sy: float,
+        buf_x: int,
+        buf_y: int,
+        buf_w: int,
+        buf_h: int,
+    ) -> None:
+        """Render texture falloff bands with bounding-rect numpy max."""
+        combined = np.zeros((buf_h, buf_w, 4), dtype=np.uint8)
+
+        for strip_path, gradient, solid_end, fill_tex in tex_bands:
+            # Compute screen-pixel bounding rect of this band
+            br = strip_path.boundingRect()
+            bx1 = int(br.left() * sx + xform.dx() - buf_x) - 1
+            by1 = int(br.top() * sy + xform.dy() - buf_y) - 1
+            bx2 = int(br.right() * sx + xform.dx() - buf_x) + 2
+            by2 = int(br.bottom() * sy + xform.dy() - buf_y) + 2
+            bx1 = max(0, bx1)
+            by1 = max(0, by1)
+            bx2 = min(buf_w, bx2)
+            by2 = min(buf_h, by2)
+            bw = bx2 - bx1
+            bh = by2 - by1
+            if bw <= 0 or bh <= 0:
+                continue
+
+            band_img = QImage(
+                bw, bh, QImage.Format.Format_ARGB32_Premultiplied,
+            )
+            if band_img.isNull():
+                continue
+            band_img.fill(Qt.GlobalColor.transparent)
+            bp = QPainter(band_img)
+            bp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            bp.setPen(Qt.PenStyle.NoPen)
+            bp.translate(
+                xform.dx() - buf_x - bx1,
+                xform.dy() - buf_y - by1)
+            bp.scale(sx, sy)
+
+            brush = self._make_texture_brush(
+                fill_tex.texture_id, fill_tex.zoom, fill_tex.rotation,
+                fill_tex.offset_x, fill_tex.offset_y,
+            )
+            if brush:
+                bp.setBrush(brush)
+                bp.drawPath(strip_path)
+                bp.setCompositionMode(
+                    QPainter.CompositionMode.CompositionMode_DestinationIn,
+                )
+                gradient.setColorAt(0.0, QColor(255, 255, 255, 255))
+                if solid_end > 0.01:
+                    gradient.setColorAt(solid_end, QColor(255, 255, 255, 255))
+                gradient.setColorAt(1.0, QColor(255, 255, 255, 0))
+                bp.setBrush(QBrush(gradient))
+                bp.drawRect(strip_path.boundingRect().adjusted(-4, -4, 4, 4))
+            bp.end()
+
+            # Per-pixel max into combined at the correct offset
+            stride = band_img.bytesPerLine()
+            raw = np.frombuffer(band_img.constBits(), dtype=np.uint8)
+            if stride == bw * 4:
+                arr = raw.reshape(bh, bw, 4)
+            else:
+                arr = raw.reshape(bh, stride)[:, :bw * 4].reshape(
+                    bh, bw, 4,
+                )
+            region = combined[by1:by2, bx1:bx2]
+            np.maximum(region, arr, out=region)
+
+        if combined.any():
+            result_data = combined.tobytes()
+            result_img = QImage(
+                result_data, buf_w, buf_h, buf_w * 4,
+                QImage.Format.Format_ARGB32_Premultiplied,
+            )
+            painter.save()
+            painter.resetTransform()
+            painter.drawImage(buf_x, buf_y, result_img)
+            painter.restore()
+
+    def _build_falloff_shape(
+        self, layout: Layout,
+        obj: HexsideObject, hexside_path: QPainterPath,
+    ) -> tuple[QPainterPath, QLinearGradient, float] | None:
+        """Build the falloff polygon shape with corner fans and gradient.
+
+        Returns (strip_path, gradient, solid_end) or None.
+        """
+        ha = (obj.hex_a_q, obj.hex_a_r)
+        hb = (obj.hex_b_q, obj.hex_b_r)
+
+        # Source = the hex whose fill extends into falloff_side
+        if obj.falloff_side == "a":
+            source_key = hb
+        else:
+            source_key = ha
+
+        fill_color = self._fill_colors.get(source_key)
+        fill_tex = self._fill_textures.get(source_key)
+        if fill_color is None and fill_tex is None:
+            return None
+
+        # Band direction: normal pointing INTO falloff_side hex
+        nx, ny = self._get_edge_normal(layout, obj.hex_a(), obj.hex_b())
+        if obj.falloff_side == "a":
+            band_nx, band_ny = -nx, -ny
+        else:
+            band_nx, band_ny = nx, ny
+
+        # Sample the hexside path to get inner edge points
+        path_len = hexside_path.length()
+        if path_len <= 0:
+            return None
+        n_samples = max(10, min(60, int(path_len / 5)))
+        inner_points: list[tuple[float, float]] = []
+        for i in range(n_samples + 1):
+            t = i / n_samples
+            p = hexside_path.pointAtPercent(t)
+            inner_points.append((p.x(), p.y()))
+
+        fw = obj.falloff_width
+
+        # Compute outer edge with optional organic width variation
+        if obj.falloff_random > 0:
+            rng = _random.Random(obj.falloff_random_seed)
+            amp = obj.falloff_random
+            # Damped random walk — strong steps + moderate damping for organic blobs
+            raw: list[float] = []
+            current = 0.0
+            for _ in range(n_samples + 1):
+                current += rng.gauss(0, amp * 0.6)
+                current *= 0.7  # moderate mean-reversion
+                current = max(-amp * 2.0, min(amp * 2.0, current))
+                raw.append(current)
+            # Smooth with 3-point moving average
+            smoothed = list(raw)
+            for i in range(1, len(smoothed) - 1):
+                smoothed[i] = (raw[i - 1] + raw[i] + raw[i + 1]) / 3.0
+            outer_points: list[tuple[float, float]] = [
+                (ix + band_nx * max(fw * 0.1, fw + smoothed[i]),
+                 iy + band_ny * max(fw * 0.1, fw + smoothed[i]))
+                for i, (ix, iy) in enumerate(inner_points)
+            ]
+        else:
+            outer_points: list[tuple[float, float]] = [
+                (ix + band_nx * fw, iy + band_ny * fw)
+                for ix, iy in inner_points
+            ]
+
+        # --- Corner fans: fill gaps at hex vertices ---
+        # At each endpoint, sweep 55 degrees from the band normal toward the
+        # outward tangent to cover the ~60 degree gap between adjacent bands.
+        n_fan = 4
+        fan_sweep = math.radians(55)
+        base_angle = math.atan2(band_ny, band_nx)
+
+        # Start vertex fan
+        if len(inner_points) >= 2:
+            vx, vy = inner_points[0]
+            tx = inner_points[0][0] - inner_points[1][0]
+            ty = inner_points[0][1] - inner_points[1][1]
+            tangent_angle = math.atan2(ty, tx)
+            delta = tangent_angle - base_angle
+            while delta > math.pi:
+                delta -= 2 * math.pi
+            while delta < -math.pi:
+                delta += 2 * math.pi
+            sweep_dir = math.copysign(fan_sweep, delta)
+
+            start_fan = []
+            for i in range(n_fan, 0, -1):
+                angle = base_angle + sweep_dir * (i / n_fan)
+                start_fan.append((
+                    vx + math.cos(angle) * fw,
+                    vy + math.sin(angle) * fw,
+                ))
+            outer_points = start_fan + outer_points
+
+        # End vertex fan
+        if len(inner_points) >= 2:
+            vx, vy = inner_points[-1]
+            tx = inner_points[-1][0] - inner_points[-2][0]
+            ty = inner_points[-1][1] - inner_points[-2][1]
+            tangent_angle = math.atan2(ty, tx)
+            delta = tangent_angle - base_angle
+            while delta > math.pi:
+                delta -= 2 * math.pi
+            while delta < -math.pi:
+                delta += 2 * math.pi
+            sweep_dir = math.copysign(fan_sweep, delta)
+
+            end_fan = []
+            for i in range(1, n_fan + 1):
+                angle = base_angle + sweep_dir * (i / n_fan)
+                end_fan.append((
+                    vx + math.cos(angle) * fw,
+                    vy + math.sin(angle) * fw,
+                ))
+            outer_points = outer_points + end_fan
+
+        # Build closed polygon: inner edge forward + outer edge reversed
+        strip_path = QPainterPath()
+        strip_path.moveTo(QPointF(inner_points[0][0], inner_points[0][1]))
+        for px, py in inner_points[1:]:
+            strip_path.lineTo(QPointF(px, py))
+        for px, py in reversed(outer_points):
+            strip_path.lineTo(QPointF(px, py))
+        strip_path.closeSubpath()
+
+        # Gradient: from inner edge (opaque) to outer edge (transparent)
+        inner_mid_x = sum(p[0] for p in inner_points) / len(inner_points)
+        inner_mid_y = sum(p[1] for p in inner_points) / len(inner_points)
+        grad_start = QPointF(inner_mid_x, inner_mid_y)
+        grad_end = QPointF(
+            inner_mid_x + band_nx * fw,
+            inner_mid_y + band_ny * fw,
+        )
+
+        gradient = QLinearGradient(grad_start, grad_end)
+        solid_end = 1.0 - obj.falloff_amount
+
+        # Clip to target hex boundary so bands never overflow into
+        # adjacent hexes (prevents overlap darkening at outer corners).
+        # Expand the clip polygon by ~0.5 px outward so the shared
+        # hexside edge (which sits exactly on the hex boundary) is
+        # reliably inside the clip — QPainterPath.intersected() can
+        # discard geometry that lies exactly on a shared edge.
+        target = obj.hex_a() if obj.falloff_side == "a" else obj.hex_b()
+        tcx, tcy = hex_to_pixel(layout, target)
+        corners = hex_corners(layout, target)
+        hex_clip = QPainterPath()
+        expand = 1.01  # ~1 % outward to cover the shared edge
+        c0x = tcx + (corners[0][0] - tcx) * expand
+        c0y = tcy + (corners[0][1] - tcy) * expand
+        hex_clip.moveTo(QPointF(c0x, c0y))
+        for cx, cy in corners[1:]:
+            hex_clip.lineTo(QPointF(tcx + (cx - tcx) * expand,
+                                    tcy + (cy - tcy) * expand))
+        hex_clip.closeSubpath()
+        strip_path = strip_path.intersected(hex_clip)
+
+        return strip_path, gradient, solid_end
 
     def _build_vertex_counts(self, layout: Layout) -> dict[tuple[int, int], int]:
         """Count how many hexsides meet at each hex vertex.

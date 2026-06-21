@@ -1,4 +1,4 @@
 """Application version constant."""
 
-VERSION = "v0.5.17a"
+VERSION = "v1.0.5"
 LOADING_SCREEN = True

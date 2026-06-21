@@ -64,6 +64,7 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("Ctrl+Shift+Z", "Cycle Zoom Settle Delay"),
         ("Ctrl+Shift+L", "Toggle Sharp Lines (Screen-Resolution Cache for line layers)"),
         ("Ctrl+Shift+B", "Toggle Edge Bleeding Quality (Performance / Quality)"),
+        ("Ctrl+Shift+W", "Toggle Draw Mask Quality (1\u00d7 / 2\u00d7)"),
     ]),
     ("Help", [
         ("F1", "Open Shortcuts Reference"),
@@ -81,8 +82,13 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("R", "Path Tool (Freeform)"),
         ("S", "Sketch Tool"),
     ]),
-    ("Background Tool", [
-        ("Left Drag",  "Move background image"),
+    ("Background Tool \u2013 Image Mode", [
+        ("Left Drag",  "Move background image (when not locked)"),
+    ]),
+    ("Background Tool \u2013 Erase Mode", [
+        ("Left Drag",                    "Erase pixels (paint transparent)"),
+        ("Shift + Left Drag",            "Restore erased pixels (paint backup back)"),
+        ("Ctrl + Left Drag (up / down)", "Adjust erase brush size"),
     ]),
     ("Fill Tool (Hex / Dot Color / Coord Color / Hex Edge / Stipple)", [
         ("Left Click / Drag",  "Fill hex(es) in brush radius"),
@@ -124,6 +130,14 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Hexside Tool – Place Mode", [
         ("Left Drag",  "Paint hexside edges"),
         ("Right Click","Delete hexside under cursor"),
+    ]),
+    ("Hexside Tool – Falloff Mode", [
+        ("Left Click/Drag", "Apply falloff gradient band"),
+        ("Right Click",     "Remove falloff from hexside"),
+    ]),
+    ("Hexside Tool – Teeth Mode", [
+        ("Left Click/Drag", "Place teeth along hex edges"),
+        ("Right Click",     "Remove teeth from hexside"),
     ]),
     ("Hexside Tool – Select Mode", [
         ("Left Click",               "Select hexside"),
@@ -195,6 +209,11 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("Left Click / Drag",             "Paint or erase pixels"),
         ("Ctrl + Left Drag (up / down)",  "Adjust brush size"),
         ("Ctrl+Z",                        "Undo last operation"),
+    ]),
+    ("Edit Image Dialog – Overlays", [
+        ("Show Grid checkbox",            "Toggle hex grid overlay on the image"),
+        ("Show Layers checkbox",          "Toggle composite of all other visible layers"),
+        ("Opacity sliders",               "Adjust overlay transparency (0–100%)"),
     ]),
 ]
 

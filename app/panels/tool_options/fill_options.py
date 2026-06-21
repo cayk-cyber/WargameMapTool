@@ -1132,8 +1132,11 @@ class FillOptions:
     def _rebuild_stip_tex_browser(self) -> None:
         """Rebuild stipple texture thumbnail grid from filtered results."""
         for btn in self._stip_tex_buttons.values():
-            self._stip_tex_grid_layout.removeWidget(btn)
-            btn.deleteLater()
+            try:
+                self._stip_tex_grid_layout.removeWidget(btn)
+                btn.deleteLater()
+            except RuntimeError:
+                pass  # C++ object already deleted (parent widget destroyed)
         self._stip_tex_buttons.clear()
 
         filtered = self._filtered_stip_tex()

@@ -4,24 +4,12 @@ import os
 import sys
 import traceback
 
-from PySide6.QtCore import QEventLoop, Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QImageReader, QPixmap
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from app.main_window import MainWindow
 from app.version import LOADING_SCREEN
-
-
-def _make_splash_pixmap(icon_path: str) -> QPixmap:
-    """Load icon.ico; scale up to 256×256 minimum (same as companion apps)."""
-    pm = QPixmap(icon_path)
-    if not pm.isNull() and (pm.width() < 256 or pm.height() < 256):
-        pm = pm.scaled(
-            256, 256,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-    return pm
 
 
 def main():
@@ -88,17 +76,24 @@ def main():
     icon_path = os.path.join(base_path, "assets", "icon.ico")
     app.setWindowIcon(QIcon(icon_path))
 
-    # Splash screen (only when LOADING_SCREEN = True in version.py)
+    # Show splash screen BEFORE creating MainWindow so the user sees
+    # immediate feedback while imports and initialisation run.
     splash = None
     if LOADING_SCREEN:
-        splash = QSplashScreen(_make_splash_pixmap(icon_path))
-        splash.show()
-        app.processEvents()
-        loop = QEventLoop()
-        QTimer.singleShot(2000, loop.quit)
-        loop.exec()
+        pm = QPixmap(icon_path)
+        if not pm.isNull():
+            if pm.width() < 256 or pm.height() < 256:
+                pm = pm.scaled(
+                    256, 256,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            splash = QSplashScreen(pm)
+            splash.show()
+            app.processEvents()
 
-    try:  # L15: show error dialog on startup crash instead of silent Python traceback
+    # Create MainWindow (heavy: imports, panels, tools, etc.)
+    try:
         window = MainWindow()
     except Exception:
         if splash:
@@ -110,9 +105,16 @@ def main():
         msg.setIcon(QMessageBox.Icon.Critical)
         msg.exec()
         sys.exit(1)
-    window.showMaximized()
+
+    # Keep splash visible for a minimum time after construction,
+    # then show the main window.
     if splash:
-        splash.finish(window)
+        def _show():
+            splash.close()
+            window.showMaximized()
+        QTimer.singleShot(800, _show)
+    else:
+        window.showMaximized()
 
     sys.exit(app.exec())
 

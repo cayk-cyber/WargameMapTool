@@ -9,6 +9,7 @@ from app.tools.base_tool import Tool
 
 class ToolManager(QObject):
     tool_changed = Signal(str)
+    cursor_changed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -22,6 +23,11 @@ class ToolManager(QObject):
         if name in self._tools:
             self._active_tool = self._tools[name]
             self.tool_changed.emit(name)
+            self.cursor_changed.emit()
+
+    def notify_cursor_changed(self) -> None:
+        """Emit cursor_changed so the canvas updates its cursor shape."""
+        self.cursor_changed.emit()
 
     @property
     def active_tool(self) -> Tool | None:

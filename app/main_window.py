@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QColorDialog,
@@ -64,12 +64,23 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Wargame Map Tool {VERSION}")
         self.resize(1400, 900)
 
+        # Set window icon explicitly (taskbar on Windows uses the window icon)
+        import sys as _sys
+        _base = getattr(_sys, '_MEIPASS', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        _icon_path = os.path.join(_base, "assets", "icon.ico")
+        if os.path.isfile(_icon_path):
+            self.setWindowIcon(QIcon(_icon_path))
+
         # Core objects
         self._project = Project()
         self._command_stack = CommandStack(max_size=20)
         self._tool_manager = ToolManager()
         self._global_lighting_dlg = None
         self._random_map_dlg = None
+
+        # Autosave timer
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.timeout.connect(self._on_autosave_tick)
 
         # Canvas
         self._canvas = CanvasWidget(self._project)
@@ -194,6 +205,19 @@ class MainWindow(QMainWindow):
         save_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
         save_as_action.triggered.connect(self._on_save_as)
         file_menu.addAction(save_as_action)
+
+        # Autosave submenu
+        autosave_menu = file_menu.addMenu("Autosave")
+        autosave_group = QActionGroup(self)
+        autosave_group.setExclusive(True)
+        self._autosave_actions: dict[int, QAction] = {}
+        for minutes, label in [(0, "Off"), (1, "1 Minute"), (2, "2 Minutes"),
+                                (5, "5 Minutes"), (10, "10 Minutes")]:
+            act = QAction(label, self, checkable=True)
+            autosave_group.addAction(act)
+            autosave_menu.addAction(act)
+            act.triggered.connect(lambda checked, m=minutes: self._set_autosave_interval(m))
+            self._autosave_actions[minutes] = act
 
         file_menu.addSeparator()
 
@@ -373,6 +397,11 @@ class MainWindow(QMainWindow):
         _sc_eb.triggered.connect(self._on_shortcut_toggle_edge_bleed_quality)
         self.addAction(_sc_eb)
 
+        _sc_dq = QAction(self)
+        _sc_dq.setShortcut(QKeySequence("Ctrl+Shift+W"))
+        _sc_dq.triggered.connect(self._on_shortcut_toggle_draw_quality)
+        self.addAction(_sc_dq)
+
         # Apply persisted settings (defaults)
         _settings = load_app_settings()
 
@@ -400,6 +429,20 @@ class MainWindow(QMainWindow):
         from app.layers.draw_layer import set_edge_bleed_quality_mode
         self._edge_bleed_quality: bool = _settings.get("edge_bleed_quality", False)
         set_edge_bleed_quality_mode(self._edge_bleed_quality)
+
+        from app.models.draw_object import set_draw_quality_mode
+        self._draw_quality: bool = _settings.get("draw_quality", False)
+        set_draw_quality_mode(self._draw_quality)
+
+        # Autosave: restore persisted interval (default 10 min)
+        self._autosave_interval: int = _settings.get("autosave_interval", 10)
+        if self._autosave_interval not in (0, 1, 2, 5, 10):
+            self._autosave_interval = 10
+        act = self._autosave_actions.get(self._autosave_interval)
+        if act:
+            act.setChecked(True)
+        if self._autosave_interval > 0:
+            self._autosave_timer.start(self._autosave_interval * 60_000)
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -613,6 +656,25 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save:\n{e}")
 
+    # ---- Autosave --------------------------------------------------------
+
+    def _set_autosave_interval(self, minutes: int) -> None:
+        self._autosave_interval = minutes
+        if minutes > 0:
+            self._autosave_timer.start(minutes * 60_000)
+        else:
+            self._autosave_timer.stop()
+        settings = load_app_settings()
+        settings["autosave_interval"] = minutes
+        save_app_settings(settings)
+
+    def _on_autosave_tick(self) -> None:
+        if not self._project.file_path:
+            return
+        if not self._project.dirty:
+            return
+        self._save_to(self._project.file_path)
+
     def _show_save_toast(self) -> None:
         """Briefly show a 'Saved' overlay on the canvas."""
         self._show_toast("Saved", "rgba(40, 180, 80, 210)")
@@ -749,7 +811,7 @@ class MainWindow(QMainWindow):
         new_config = dialog.get_config()
         config = self._project.grid_config
 
-        # Copy visual fields only (not layout: hex_size, width, height, orientation, first_row_offset)
+        # Copy visual fields (not structural: hex_size, orientation, first_row_offset)
         config.line_width = new_config.line_width
         config.edge_color = new_config.edge_color
         config.grid_style = new_config.grid_style
@@ -785,11 +847,32 @@ class MainWindow(QMainWindow):
         self._toggle_megahexes_action.setChecked(config.megahex_enabled)
         self._toggle_megahexes_action.setEnabled(config.megahex_enabled)
 
+        # Layout dimension change (rows/columns)
+        old_w, old_h = config.width, config.height
+        new_w, new_h = new_config.width, new_config.height
+        if new_w != old_w or new_h != old_h:
+            config.width = new_w
+            config.height = new_h
+            new_bounds = config.get_map_pixel_bounds()
+            # Resize masks that depend on map bounds
+            from app.layers.asset_layer import AssetLayer
+            from app.layers.draw_layer import DrawLayer
+
+            for layer in self._project.layer_stack:
+                if isinstance(layer, AssetLayer) and layer.mask_image is not None:
+                    layer.resize_mask(new_bounds)
+                elif isinstance(layer, DrawLayer):
+                    for ch in layer.channels:
+                        if ch.mask_image is not None:
+                            ch.resize_mask(new_bounds)
+
         # Invalidate all layer caches (bounds may have changed)
         for layer in self._project.layer_stack:
             layer.mark_dirty()
 
+        self._canvas.clear_screen_layer_caches()
         self._canvas.zoom_to_fit()
+        self._layer_panel._minimap._schedule_render()
 
     def _on_edit_palettes(self):
         dialog = PaletteEditorDialog(self)
@@ -853,9 +936,15 @@ class MainWindow(QMainWindow):
         new_layer.offset_x = bounds.x()
         new_layer.offset_y = bounds.y()
         new_layer.scale = 1.0
+        new_layer.clip_to_grid = True
 
         insert_index = layer_index + 1
         stack.add_layer(new_layer, insert_index)
+
+        # Lock position on the new image layer
+        bg_tool = self._tool_manager.get_tool("Background")
+        if bg_tool:
+            bg_tool.locked = True
 
         # 2. Hide the original layer
         layer.visible = False
@@ -949,12 +1038,14 @@ class MainWindow(QMainWindow):
         dlg = PerformanceDialog(self)
         dlg.set_render_quality(self._render_quality)
         dlg.set_sharp_lines(self._sharp_lines)
+        dlg.set_draw_quality(self._draw_quality)
         dlg.set_edge_bleed_quality(self._edge_bleed_quality)
         dlg.set_cache_delay(self._cache_delay)
         dlg.set_zoom_settle(self._zoom_settle)
         dlg.set_gfx_visible(self._gfx_visible)
         dlg.render_quality_changed.connect(self._apply_render_quality)
         dlg.sharp_lines_changed.connect(self._apply_sharp_lines)
+        dlg.draw_quality_changed.connect(self._apply_draw_quality)
         dlg.edge_bleed_quality_changed.connect(self._apply_edge_bleed_quality)
         dlg.cache_delay_changed.connect(self._apply_cache_delay)
         dlg.zoom_settle_changed.connect(self._apply_zoom_settle)
@@ -968,8 +1059,9 @@ class MainWindow(QMainWindow):
         self._render_quality = quality
         set_fill_quality_mode(quality)
         for layer in self._project.layer_stack._layers:
-            if isinstance(layer, FillLayer):
+            if isinstance(layer, (FillLayer, HexsideLayer)):
                 layer.mark_dirty()
+        self._canvas.clear_screen_layer_caches()
         self._canvas.update()
         settings = load_app_settings()
         settings["render_quality"] = "quality" if quality else "performance"
@@ -1033,6 +1125,27 @@ class MainWindow(QMainWindow):
         if self._perf_dlg and self._perf_dlg.isVisible():
             self._perf_dlg.set_sharp_lines(sharp)
 
+    def _apply_draw_quality(self, quality: bool) -> None:
+        from app.layers.draw_layer import DrawLayer
+        from app.models.draw_object import set_draw_quality_mode, get_draw_quality_scale
+        self._draw_quality = quality
+        set_draw_quality_mode(quality)
+        new_scale = get_draw_quality_scale()
+        for layer in self._project.layer_stack._layers:
+            if isinstance(layer, DrawLayer):
+                for ch in layer.channels:
+                    ch.rescale_mask(new_scale)
+                layer._edge_bleed_cache.clear()
+                layer.mark_dirty()
+        self._canvas.update()
+        settings = load_app_settings()
+        settings["draw_quality"] = quality
+        save_app_settings(settings)
+        label = "Quality (2\u00d7)" if quality else "Performance (1\u00d7)"
+        self._show_setting_toast(f"Draw Mask: {label}")
+        if self._perf_dlg and self._perf_dlg.isVisible():
+            self._perf_dlg.set_draw_quality(quality)
+
     def _apply_edge_bleed_quality(self, quality: bool) -> None:
         from app.layers.draw_layer import DrawLayer, set_edge_bleed_quality_mode
         self._edge_bleed_quality = quality
@@ -1076,6 +1189,9 @@ class MainWindow(QMainWindow):
 
     def _on_shortcut_toggle_sharp_lines(self) -> None:
         self._apply_sharp_lines(not self._sharp_lines)
+
+    def _on_shortcut_toggle_draw_quality(self) -> None:
+        self._apply_draw_quality(not self._draw_quality)
 
     def _on_shortcut_toggle_edge_bleed_quality(self) -> None:
         self._apply_edge_bleed_quality(not self._edge_bleed_quality)

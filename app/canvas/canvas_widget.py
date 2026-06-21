@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPaintEve
 from PySide6.QtWidgets import QWidget
 
 from app.hex.hex_math import Hex, pixel_to_hex
+from app.layers.background_layer import BackgroundImageLayer
 from app.layers.fill_layer import FillLayer
 from app.layers.hexside_layer import HexsideLayer
 from app.layers.sketch_layer import SketchLayer
@@ -99,6 +100,7 @@ class CanvasWidget(QWidget):
 
     def set_tool_manager(self, tool_manager):
         self._tool_manager = tool_manager
+        tool_manager.cursor_changed.connect(self._restore_cursor)
 
     def set_cache_rebuild_delay(self, ms: int) -> None:
         """Set the deferred cache rebuild delay in milliseconds.
@@ -692,6 +694,22 @@ class CanvasWidget(QWidget):
                 layer.paint(painter, viewport, layout)
                 painter.restore()
                 continue
+            # BackgroundImageLayer: always render directly on the scaled
+            # painter so the source pixmap is resampled in a single pass
+            # (sharp at any zoom).  Cache paths would clip to map_bounds
+            # and introduce double-interpolation blur.
+            if isinstance(layer, BackgroundImageLayer):
+                painter.save()
+                painter.setOpacity(layer.opacity)
+                if layer.clip_to_grid:
+                    painter.setClipPath(grid_clip)
+                else:
+                    # Remove the global half-hex clip (if active) so the
+                    # image can extend beyond the grid boundary.
+                    painter.setClipping(False)
+                layer.paint(painter, viewport, layout)
+                painter.restore()
+                continue
             layer_clip = grid_clip if layer.clip_to_grid else None
             self._paint_layer(painter, layer, map_bounds, viewport, layout, can_cache, layer_clip)
 
@@ -911,10 +929,16 @@ class CanvasWidget(QWidget):
         self.update()
 
     def _restore_cursor(self):
+        if self._is_panning or self._right_is_panning:
+            return
         if self._tool_manager and self._tool_manager.active_tool:
             self.setCursor(self._tool_manager.active_tool.cursor)
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._restore_cursor()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -957,6 +981,7 @@ class CanvasWidget(QWidget):
                     self.update()
         if self._tool_manager and self._tool_manager.active_tool:
             self._tool_manager.active_tool.key_press(event)
+            self._restore_cursor()
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):

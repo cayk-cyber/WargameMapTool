@@ -58,7 +58,7 @@ content lives on its own layer and is edited with the matching tool.</p>
 </ul>
 
 <h3>Coordinate System</h3>
-<p>Hexes use <b>axial coordinates (q, r)</b> (Red Blob Games reference). Flat-Top
+<p>Hexes use <b>axial coordinates (q, r)</b>. Flat-Top
 orientation is the default. World space is measured in screen pixels at 96 DPI.</p>
 
 <h3>Layer Limit</h3>
@@ -196,6 +196,13 @@ _DOCS["menu_file"] = _page("File Menu", """
       <td>Saves the current map. Opens Save As dialog if the map has never been saved.</td></tr>
   <tr><td><b>Save As…</b></td><td><code>Ctrl+Shift+S</code></td>
       <td>Saves the map to a new file path.</td></tr>
+  <tr><td><b>Autosave</b></td><td>&mdash;</td>
+      <td>Submenu to set the automatic save interval: <b>Off</b>, <b>1 Minute</b>,
+      <b>2 Minutes</b>, <b>5 Minutes</b>, or <b>10 Minutes</b> (default).
+      The project is saved automatically at the chosen interval whenever it has
+      unsaved changes and a file path. If the project has never been saved,
+      autosave is skipped until the first manual save. The setting is persisted
+      across sessions.</td></tr>
   <tr><td><b>Export…</b></td><td><code>Ctrl+Shift+E</code></td>
       <td>Opens the Export dialog for PNG, PDF or <code>.hexmap</code> export.</td></tr>
   <tr><td><b>Exit</b></td><td><code>Alt+F4</code></td>
@@ -314,6 +321,20 @@ effect on Draw Layer channels.</p>
 </ul>
 <p>Exports always use Quality mode regardless of this setting.</p>
 
+<h4>Draw Mask Quality  (<code>Ctrl+Shift+W</code> to toggle)</h4>
+<p>Controls the resolution of Draw Layer brush masks.</p>
+<ul>
+  <li><b>Performance</b> (default) — masks are stored at 1&times; world-pixel
+      resolution. Fastest and lowest memory. Brush strokes may appear
+      blocky when zoomed in.</li>
+  <li><b>Quality</b> — masks are stored at 2&times; world-pixel resolution.
+      Brush strokes stay sharp at all zoom levels. Uses ~4&times; more
+      memory per channel mask.</li>
+</ul>
+<p>Switching modes rescales existing masks. New strokes painted in Quality
+mode will be sharp; previously painted strokes keep their original detail
+level.</p>
+
 <h4>Visible GFX  (<code>Ctrl+E</code> to toggle)</h4>
 <p>Toggle visibility of layer-level visual effects across all layers at once.
 When unchecked, <b>Shadow</b>, <b>Bevel &amp; Emboss</b>, <b>Structure</b>,
@@ -399,6 +420,13 @@ _DOCS["layer_background"] = _page("Background (Image) Layer", """
 Ideal for scanned maps, satellite photos, or reference images.</p>
 <p><b>Hotkey:</b> <code>B</code></p>
 
+<h3>Tool Options &ndash; Mode</h3>
+<p>Select the active interaction mode:</p>
+<ul>
+  <li><b>Image</b> &ndash; drag the image to reposition it, adjust zoom/opacity/position.</li>
+  <li><b>Erase</b> &ndash; paint transparent pixels into the image using a circular brush.</li>
+</ul>
+
 <h3>Tool Options – Image</h3>
 <ul>
   <li><b>Load Image…</b> — select an image file from disk.</li>
@@ -407,6 +435,31 @@ Ideal for scanned maps, satellite photos, or reference images.</p>
       <a href="page:dlg_edit_image">Edit Image Dialog</a> for painting,
       posterizing, colour-selecting, and creating transparent coastline overlays.
       Edits are committed to the layer only when you click <b>Apply</b>.</li>
+</ul>
+
+<h3>Tool Options &ndash; Merge</h3>
+<ul>
+  <li><b>Merge Down</b> button &ndash; merges this Image layer onto the Image layer
+      directly below it in the layer stack. The upper layer&rsquo;s opacity is baked
+      into the merged result. The upper layer is removed after merging.
+      Only enabled when an Image layer exists directly below this one.
+      This operation is fully undoable.</li>
+</ul>
+
+<h3>Tool Options &ndash; Eraser</h3>
+<p>Visible only in <b>Erase</b> mode. All other option groups (Image, Zoom,
+Opacity, Position) are hidden while erasing.</p>
+<p>Erased pixels are highlighted with a <b>red overlay</b> so you can see
+exactly what you have removed. Only pixels erased by the tool are shown in red
+&ndash; areas that were already transparent in the original image stay clear.</p>
+<p>Hold <b>Shift</b> while dragging to <b>restore</b> previously erased pixels.
+The cursor turns green to indicate restore mode. This paints the original
+backup pixels back into the image and is fully undoable.</p>
+<ul>
+  <li><b>Size slider / spinbox</b> &ndash; erase brush radius (5&ndash;300).</li>
+  <li><b>Restore Image</b> button &ndash; reloads the original image from disk,
+      discarding all paint strokes and erasing. Asks for confirmation.
+      <em>Cannot be undone.</em></li>
 </ul>
 
 <h3>Tool Options – Zoom</h3>
@@ -436,6 +489,12 @@ Ideal for scanned maps, satellite photos, or reference images.</p>
 <table>
   <tr><th>Input</th><th>Action</th></tr>
   <tr><td>Left Drag</td><td>Reposition the image (when not locked).</td></tr>
+  <tr><td>Left Drag (Erase mode)</td><td>Erase pixels (paints transparent into the image).
+      Cursor shows a red dashed circle. Erased pixels are tinted red.</td></tr>
+  <tr><td><code>Shift</code> + Left Drag (Erase mode)</td>
+      <td>Restore erased pixels (paints backup back). Cursor turns green.</td></tr>
+  <tr><td><code>Ctrl</code> + Left Drag up/down (Erase mode)</td>
+      <td>Adjust erase brush size (drag up = larger, down = smaller).</td></tr>
 </table>
 
 <h3>Saving Edits</h3>
@@ -748,13 +807,33 @@ cliff edges, and other hex-side features.</p>
 <p><b>Hotkey:</b> <code>H</code></p>
 
 <h3>Modes</h3>
-<p><b>Place / Select</b> buttons.</p>
+<p><b>Place / Falloff / Teeth / Select</b> buttons.</p>
 
 <h3>Place Mode — Mouse Gestures</h3>
 <table>
   <tr><th>Input</th><th>Action</th></tr>
   <tr><td>Left Drag</td><td>Paint hexside edges along the path.</td></tr>
   <tr><td>Right Click</td><td>Delete the hexside under the cursor.</td></tr>
+</table>
+
+<h3>Falloff Mode — Mouse Gestures</h3>
+<table>
+  <tr><th>Input</th><th>Action</th></tr>
+  <tr><td>Left Click</td><td>Click near a hexside to add a gradient falloff band.
+      The app detects which side you clicked on — the opposite hex's fill
+      color/texture bleeds into the clicked hex as a fading gradient.</td></tr>
+  <tr><td>Left Drag</td><td>Apply falloff to hexsides along the drag path.</td></tr>
+  <tr><td>Right Click</td><td>Remove the falloff from a hexside.</td></tr>
+</table>
+
+<h3>Teeth Mode — Mouse Gestures</h3>
+<table>
+  <tr><th>Input</th><th>Action</th></tr>
+  <tr><td>Left Click</td><td>Click near a hex edge to place triangular teeth markers.
+      The app detects which side you clicked on and points the triangles
+      toward that side.</td></tr>
+  <tr><td>Left Drag</td><td>Paint teeth along hex edges.</td></tr>
+  <tr><td>Right Click</td><td>Remove teeth from a hexside.</td></tr>
 </table>
 
 <h3>Tool Options – Presets</h3>
@@ -802,11 +881,15 @@ cliff edges, and other hex-side features.</p>
   <li><b>Opacity</b> — outline opacity (0–100 %).</li>
 </ul>
 
-<h3>Tool Options – Shift</h3>
+<h3>Tool Options – Options</h3>
 <ul>
-  <li><b>Enable Auto-Shift</b> checkbox — perpendicular offset of the line from
-      the hex edge centre.</li>
-  <li><b>Shift slider / spinbox</b> — amount of perpendicular offset.</li>
+  <li><b>Taper Free Ends</b> checkbox — when enabled, hexside endpoints that are not
+      connected to another hexside will automatically narrow from full width to zero,
+      creating a natural fade-out. Connected endpoints stay at full width.</li>
+  <li><b>Length</b> — fraction of the hexside path over which the taper occurs
+      (0.1 = short taper at the tip, 1.0 = taper along the entire line).</li>
+  <li><b>Shift slider / spinbox</b> — auto-perpendicular offset away from a
+      matching hex fill (0 = disabled). Direction is auto-detected.</li>
 </ul>
 
 <h3>Tool Options – Random</h3>
@@ -819,14 +902,25 @@ cliff edges, and other hex-side features.</p>
   <li><b>Jitter</b> — adds additional micro-variation to the line.</li>
 </ul>
 
-<h3>Tool Options – Taper</h3>
+<h3>Tool Options – Falloff</h3>
+<p>Visible only in <b>Falloff</b> mode. Controls the terrain blending gradient band
+that extends from a hexside into one of the adjacent hexes.</p>
 <ul>
-  <li><b>Taper Free Ends</b> checkbox — when enabled, hexside endpoints that are not
-      connected to another hexside will automatically narrow from full width to zero,
-      creating a natural fade-out. Connected endpoints stay at full width.</li>
-  <li><b>Length</b> — fraction of the hexside path over which the taper occurs
-      (0.1 = short taper at the tip, 1.0 = taper along the entire line).
-      Both the main line and its outline are tapered together.</li>
+  <li><b>Width</b> — how far the gradient band extends into the hex (world pixels).</li>
+  <li><b>Falloff</b> — gradient softness (0 % = hard edge, 100 % = full gradient).</li>
+  <li><b>Random</b> — organic variation of the band width (0 = perfectly uniform,
+      higher values create increasingly irregular, natural-looking edges).
+      Each placed falloff gets its own random seed so patterns stay stable.</li>
+</ul>
+
+<h3>Tool Options – Teeth</h3>
+<p>Visible only in <b>Teeth</b> mode. Controls triangular fortification markers
+placed along hex edges.</p>
+<ul>
+  <li><b>Color</b> — fill color of the triangles.</li>
+  <li><b>Count</b> — number of triangles along the edge (3–6).</li>
+  <li><b>Size</b> — height of each triangle in world pixels.</li>
+  <li><b>Opacity</b> — opacity of the triangles (0–100 %).</li>
 </ul>
 
 <h3>Tool Options – Shadow</h3>
@@ -987,6 +1081,8 @@ paths, rail lines, etc. Each path connects exactly two hex centers.</p>
 <ul>
   <li><b>Width</b> slider / spinbox — foreground line thickness.</li>
   <li><b>Opacity</b> slider — foreground line opacity (0–100 %).</li>
+  <li><b>Draw on Bottom</b> checkbox — when checked, newly placed paths are inserted
+      below existing paths instead of on top. Default: off (top).</li>
   <li><b>Type</b> combo — Solid / Dashed / Dotted.</li>
   <li><b>Dash / Gap</b> — visible when Dashed or Dotted.</li>
   <li><b>Cap</b> combo — Flat / Round / Square line end caps.</li>
@@ -1106,6 +1202,8 @@ next segment will go.</p>
 <ul>
   <li><b>Width</b> slider / spinbox — foreground line thickness.</li>
   <li><b>Opacity</b> slider — foreground line opacity (0–100 %).</li>
+  <li><b>Draw on Bottom</b> checkbox — when checked, newly placed paths are inserted
+      below existing paths instead of on top. Default: off (top).</li>
   <li><b>Type</b> combo — Solid / Dashed / Dotted.</li>
   <li><b>Dash / Gap</b> — visible when Dashed or Dotted.</li>
   <li><b>Cap</b> combo — Flat / Round / Square line end caps.</li>
@@ -1566,6 +1664,17 @@ navigate-only mode.</p>
 <ul>
   <li><b>Add Black Outline</b> — draws a black border around all non-transparent
       pixels. <b>W</b> (1–10 px) controls the outline thickness.</li>
+</ul>
+
+<h3>Overlays</h3>
+<ul>
+  <li><b>Show Grid</b> — toggles a semi-transparent hex grid overlay on top of the
+      image, positioned exactly as it appears in the main map canvas. Use the
+      <b>Opacity</b> slider to control how strongly the grid is visible.</li>
+  <li><b>Show Layers</b> — toggles a composite overlay of all other visible map
+      layers (Fill, Text, Assets, etc.) on top of the image, in exact world-space
+      registration. Use the <b>Opacity</b> slider to adjust visibility. The composite
+      is a snapshot taken when the dialog opens.</li>
 </ul>
 
 <h3>Undo</h3>

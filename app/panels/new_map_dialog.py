@@ -261,7 +261,9 @@ class NewMapDialog(QDialog):
         left_col.addWidget(grid_group)
 
         if settings_only:
-            grid_group.setEnabled(False)
+            self._hex_size_spin.setEnabled(False)
+            self._orientation_combo.setEnabled(False)
+            self._first_row_combo.setEnabled(False)
 
         left_col.addStretch()
         settings_columns.addLayout(left_col)
