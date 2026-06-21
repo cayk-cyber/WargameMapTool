@@ -5,13 +5,12 @@
   "outline": true,
   "outline_color": "#045c96",
   "outline_width": 1.5,
-  "shift_enabled": false,
   "shift": 0.0,
   "random": true,
-  "random_amplitude": 2.5,
-  "random_distance": 0.14,
-  "random_endpoint": 4.2,
-  "random_offset": 11.5,
+  "random_amplitude": 1.5,
+  "random_distance": 0.1,
+  "random_endpoint": 5,
+  "random_offset": 10,
   "random_jitter": 0
 }
 

@@ -1,0 +1,23 @@
+{
+  "name": "Operational_River_AllWater",
+  "paint_mode": "color",
+  "color": "#0577c3",
+  "width": 9.0,
+  "outline": true,
+  "outline_color": "#045c96",
+  "outline_width": 2.5,
+  "outline_texture_id": "",
+  "outline_texture_zoom": 1.0,
+  "outline_texture_rotation": 0.0,
+  "shift": 0.0,
+  "random": true,
+  "random_amplitude": 1.2,
+  "random_distance": 0.1,
+  "random_endpoint": 5,
+  "random_jitter": 6.3,
+  "random_offset": 7.5,
+  "taper": true,
+  "taper_length": 0.3,
+  "falloff_width": 20.0,
+  "falloff_amount": 1.0
+}

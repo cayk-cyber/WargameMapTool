@@ -6,11 +6,6 @@
   "outline_color": "#000000",
   "outline_width": 1.0,
   "shift": 0.0,
-  "random": true,
-  "random_amplitude": 1.2,
-  "random_distance": 0.14,
-  "random_endpoint": 4.2,
-  "random_offset": 11.5,
-  "random_jitter": 0
+  "random": false
 }
 
